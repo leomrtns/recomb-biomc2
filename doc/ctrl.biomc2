@@ -1,0 +1,111 @@
+[ comments are in nexus format, anything between brackets ]
+[ 
+  Almost all parameters have default values that should not be that bad...
+  The only necessary parameters are "treefile" and "seqfile" with the file
+  names.
+]
+
+[ tree file in nexus format (mrbayes, paup) just for initial state of topology, branch length ]
+
+treefile  = paup.tre
+
+[ seq data in nexus format, INTERLEAVED, with or without charset defs ]
+
+seqfile   = paup.nexus 
+
+[ hyper-prior for rate, follows exp E(X) = rate ]
+
+rate      = 0.08
+
+[ hyper-prior for transititon:transversion ratio, follows exp E(X) = kappa ]
+
+kappa     = 1.4
+
+[ lambda of the modified poisson _per_segment_, follows gamma ]
+[ order: alpha beta with E(X) = alpha/beta ]
+
+distance  = 1 128 
+
+[ penalty (w in the paper), follows gamma  ]
+[ order: alpha beta with E(X) = alpha/beta ]
+
+penalty   = 1 1
+
+[ if this value is set, the CHARSET info of the seq data file is discarded ]
+
+nsegments = 128
+
+[ usually (n_taxa - 3), but can be smaller ]
+[ zero will give a model where distance is 0 (same topo) or 1 (recomb) ]
+
+maxdist   = 5
+
+[ ngen is total number of generations after warmup                      ]
+[ nsamples is how many samples should be drawn after burnin             ]
+[ warmup is number of iterations per warm-up cycle (5 cycles in total)  ]
+[ burnin is number of iterations per burn in cycle (5 cycles in total)  ]
+
+ngen      = 50000
+nsamples  = 500
+warmup    = 200
+burnin    = 200 
+
+[ if you want to simulate the posterior (= 0) or the prior (= 1) ]
+
+prior     = 0
+
+[ ---    below are the MCMC jump components     --- ]
+[ --- do not change without reading the methods --- ]
+
+[ larger values, lower acceptance; lower values, slower convergence. ] 
+[ should be tuned so that acceptance prob. lies between 0.2 and 0.6  ]
+[ order: rate kappa lambda penalty (all real numbers) ]
+
+update    = 1 1 1 1 
+
+[ how many iterations before trying more agressive branch swapping and how    ]
+[ many topology update cycles (no break-point change) per iteration. The      ]
+[ standard branch swapping is NNI. Values of zero are valid and mean "never". ]
+[ See also "minisampler" below, since if <cycle length> is zero there is no   ]
+[ "minisampler".                                                              ]
+[ order:  <SPR>  <cycle length> ] 
+
+proposal  = 10 2
+
+[ initial and final 1/kT (heat) (inside cycle) for warm-up stage and cycle increment.          ]
+[ 1/kT < 1, more states accepted; 1/kT > 1, only better states accepted (simulated annealing). ]
+[ increment > 1, 1/kT initial and final increase at each cycle; should be close to one.        ]
+[ order: <initial> <final> <increment> (real numbers) ]
+
+heat = 0.8 1. 1.
+
+[ Metropolis-coupled MCMC (one cold and one heated chain).  ]
+[ this is the 1/kT for the heated chain and interval at wich swap between chains should be tried.  ]
+[ values for the 1/kT should be between 0.5 and 0.999, while swap_inteval should be small (1~10)   ]
+[ order: <1/kT> (real number) <swap_interval> (integer) ]
+
+mc3 = 0.8 2
+
+[ Al-Awadhi update: before accepting/rejecting a move, run a "mini-sampler" on ]
+[ heated chain. It depends on number of iterations before accepting/rejecting  ]
+[ and 1/temperature for these cycles (smaller than one to avoid local traps,   ]
+[ larger than one to fall into these traps ;)                                  ]
+[ original behaviour (without Al-Alwadhi moves) can be set by "awadhi = 1. 0"  ]
+[ order: <1/kT> (real number) <number_of_cycles> (integer)   ]
+
+awadhi = 0.2 2
+
+[ minisampler: like Al-Awadhi update, but without changing the number/location      ]
+[ of recombination breakpoints - it may happen that by chance the new topology is   ]
+[ equal to a neighbour. This minisampler can be though of as a serial version of a  ]
+[ heated chain. So the total number of trials for recombinant segment is 2xAxB here ]
+[ 2 = (symmetric scan),                                                             ]
+[ A = <cycle length> (in "proposal" above) and                                      ]
+[ B = <number of cycles> (for "minisampler", not "awadhi").                         ]
+[ Original behaviour (without minisampler) is set by "minisampler = 1. 1"           ]
+[ order: <1/kT> (real number) <number_of_cycles> (integer)   ]
+
+minisampler = 0.5 2 
+
+
+[ This is the BIOMC2 version 1.5 control file template. ]

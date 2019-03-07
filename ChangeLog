@@ -1,0 +1,15 @@
+2006.12.23 Leonardo de Oliveira Martins (leo at lbm.ab.a.u-tokyo.ac.jp)
+
+	* src/ : file "summarise.c" was changed to "main_summarise.c" and
+	"test_distance.c" changed to "main_distance.c".
+
+	* biomc2-1.6 :  compilation uses autotools (autoconf, automake), the program compiles on
+  MacOSX and Windows (using Microsoft "interix" or something).  cygwin or mingw don't 
+  work since the program uses GNU extensions (strcasestr, etc). 
+  The Microsoft product (Windows apps for Unix) is free, maybe open-sourced (at 
+  least should be, since they implement gcc right?). Never tested, though.
+
+  * biomc2_rng.c : implement GSL random functions into the program. The function 
+  "getline" had be to be reimplemented as well to work on Mac.
+
+this list is incomplete (I don't use this format anyway). Feel free to mark your changes here.

@@ -1,0 +1,30 @@
+#NEXUS 
+
+[ This is the tree file as input to biomc2. The tree is irrevelant, but I've always 
+	tried with a NJ or other not-so-bad initial state. If more than one tree is given, 
+	the program will sort one of them. If there is interest, you can change this at the file 
+	chain_data.c . If the tree has branch lengths, their average will be initial state for 
+	average rate (the same for all segments). Otherwise a Poisson-corrected distance is calculated 
+	from the sequence and assigned initial state. The program should not be dependent on initial 
+	state choice. ]
+
+Begin trees;  [Treefile saved Tue Sep  5 22:58:08 2006]
+[!
+>Data file = /home/leo/Projetos/040-Likelihood/simulation/06-biomc2.files/07/paup.nexus
+>Neighbor-joining search settings:
+>  Ties (if encountered) will be broken systematically
+>  Distance measure = uncorrected ("p")
+>  (Tree is unrooted)
+]
+	Translate
+		1 s1,
+		2 s2,
+		3 s6,
+		4 s9,
+		5 s4,
+		6 s7,
+		7 s5,
+		8 s3
+		;
+tree PAUP_1 = [&U] (1,((((((2,3),4),5),6),7),8));
+End;
