@@ -1,5 +1,5 @@
 dnl Autoconf init, autoheader output location, config and prefix directories
-AC_INIT([biomc2], [1.11], [leomrtns@gmail.com])
+AC_INIT([biomc2], [1.12], [leomrtns@gmail.com])
 AC_CONFIG_SRCDIR([src/main.c])
 AC_CONFIG_HEADERS([src/config.h])
 AC_PREFIX_DEFAULT(${HOME})

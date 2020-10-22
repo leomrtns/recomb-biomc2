@@ -8,6 +8,9 @@ The model is described in the following publications:
 
 For more information please check out http://www.biomcmc.org
 
+Please notice that I used to distribute tarballs (compressed files) containing the software, but now I strongly suggest
+to download it using git. 
+
 ## Installation
 
 Some general instructions on how to install the package are described in the INSTALL file. 
