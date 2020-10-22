@@ -85,6 +85,9 @@
 	 \endverbatim
  */
 
+#ifndef _biomc2_rng_h_
+#define _biomc2_rng_h_
+
 #include "biomc2.h"
 /*! \brief maximum integer value for the generator (equivalent to 13 822 512 872 422 375 423) */
 #define RNG_MAX_VALUE 0xffffffffUL
@@ -100,13 +103,13 @@ struct biomc2_rng_struct
 biomc2_rng random_number;
 
 /*! \brief Returns a random number between 0 and 1 (inclusive). */
-inline double biomc2_rng_uniform (biomc2_rng r);
+double biomc2_rng_uniform (biomc2_rng r);
 
 /*! \brief Returns a positive random number between 0 and 1 (inclusive). */
-inline double biomc2_rng_uniform_pos (biomc2_rng r);
+double biomc2_rng_uniform_pos (biomc2_rng r);
 
 /*! \brief Returns an integer random number between 0 and n (exclusive). */
-inline unsigned long int biomc2_rng_uniform_int (biomc2_rng r, unsigned long int n);
+unsigned long int biomc2_rng_uniform_int (biomc2_rng r, unsigned long int n);
 
 /*! \brief Allocates memory for new random number instance. */
 biomc2_rng new_biomc2_rng (void);
@@ -124,4 +127,4 @@ void del_biomc2_rng (biomc2_rng r);
  */
 void biomc2_rng_update (biomc2_rng r);
 
-
+#endif // define 

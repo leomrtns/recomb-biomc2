@@ -218,15 +218,13 @@ average_rate_distance_method (phylogeny phy)
 			for (pos=0; pos < phy->nchar; pos++) {
 				e_1 = d_1 = 0;
 
-				for (b1=0; b1 < 4; b1++)
-					for (b2=0; b2 < 4; b2++)
-						if (seq1[pos][b1] * seq2[pos][b2]) {
-							if (b1 == b2) e_1++;
-							else d_1++;
-						}
-				e_2 += phy->site_weight[pos] * (double)(e_1);
-				d_2 += phy->site_weight[pos] * (double)(d_1);
-			}
+        for (b1=0; b1 < 4; b1++) for (b2=0; b2 < 4; b2++) if ((seq1[pos][b1] * seq2[pos][b2]) > 1e-6) {
+          if (b1 == b2) e_1++;
+          else d_1++;
+        }
+        e_2 += phy->site_weight[pos] * (double)(e_1);
+        d_2 += phy->site_weight[pos] * (double)(d_1);
+      }
 	
 		}
 	}

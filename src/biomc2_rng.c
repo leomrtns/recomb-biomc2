@@ -32,13 +32,13 @@ inline unsigned long int biomc2_rng_get (biomc2_rng r);
 /*! \brief Sets the new seed \f$s\f$ for the random generator. */
 inline void biomc2_rng_set (biomc2_rng r, unsigned long int s);
 
-inline double
+double
 biomc2_rng_uniform (biomc2_rng r)
 {
   return (biomc2_rng_get (r) / 4294967296.0);
 }
 
-inline double
+double
 biomc2_rng_uniform_pos (biomc2_rng r)
 {
 	double x;
@@ -46,7 +46,7 @@ biomc2_rng_uniform_pos (biomc2_rng r)
   return x;
 }
 
-inline unsigned long int
+unsigned long int
 biomc2_rng_uniform_int (biomc2_rng r, unsigned long int n)
 {
 	unsigned long int scale = RNG_MAX_VALUE/n;

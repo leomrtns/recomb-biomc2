@@ -61,10 +61,10 @@ AC_ARG_ENABLE(optimization,
 )
 if test -n "${optim_use}"; then
     AC_MSG_RESULT([yes])
-		CFLAGS="${CFLAGS} -std=gnu89 -funroll-loops -fomit-frame-pointer -finline-functions -O4";
+		CFLAGS="${CFLAGS} -std=gnu11 -funroll-loops -fomit-frame-pointer -finline-functions -O4"; # gnu89 retired
 else
     AC_MSG_RESULT([no])
-		CFLAGS="${CFLAGS} -std=gnu89 -g -W -Wall -Werror -Wno-uninitialized";
+		CFLAGS="${CFLAGS} -std=gnu11 -g -W -Wall -Werror -Wno-uninitialized";
 fi
 
 AC_MSG_RESULT([....  end of configuration options specific to biomc2 ....])

@@ -229,8 +229,8 @@ dSPR_partition_l (split_space split, int *max)
   bool firstpass = true, verbose = 0; /* DEBUG option so that we can see the steps of d_SPR calc */
 
 	if (verbose > 3) {
-		for (i=0; i < split->n_u1; i++) split_print_binary_bipartition_l ((split->u1[i]), split); printf (" [t1] \n");
-		for (i=0; i < split->n_u2; i++) split_print_binary_bipartition_l ((split->u2[i]), split); printf (" [t2] \n\n");
+		for (i=0; i < split->n_u1; i++) { split_print_binary_bipartition_l ((split->u1[i]), split);} printf (" [t1] \n");
+		for (i=0; i < split->n_u2; i++) { split_print_binary_bipartition_l ((split->u2[i]), split);} printf (" [t2] \n\n");
 	}
 
 	/* minimize distance from leaves */
@@ -260,14 +260,12 @@ dSPR_partition_l (split_space split, int *max)
 
 		if (verbose > 1) {
 			if (verbose > 2) {
-				for (i=0; i < split->n_u1; i++) split_print_binary_bipartition_l ((split->u1[i]), split); printf (" [t1] \n");
-				for (i=0; i < split->n_u2; i++) split_print_binary_bipartition_l ((split->u2[i]), split); printf (" [t2] \n\n");
+				for (i=0; i < split->n_u1; i++) { split_print_binary_bipartition_l ((split->u1[i]), split); } printf (" [t1] \n");
+				for (i=0; i < split->n_u2; i++) { split_print_binary_bipartition_l ((split->u2[i]), split); } printf (" [t2] \n\n");
 			}
-			for (i=0; i < split->n_agree; i++) split_print_binary_bipartition_l (split->agree[i], split); printf (" [agree] \n");
-			for (i=0; i < split->n_leaves; i++) printf ("%*d.", 2, i+1);
-			printf ("\n");
-			for (i=0; i < split->n_leaves; i++) printf ("%*d.", 2,split->leaf_idx[i]);
-			printf ("[original leaves]\n\n");
+			for (i=0; i < split->n_agree; i++) { split_print_binary_bipartition_l (split->agree[i], split); } printf (" [agree] \n");
+			for (i=0; i < split->n_leaves; i++) { printf ("%*d.", 2, i+1); } printf ("\n");
+			for (i=0; i < split->n_leaves; i++) { printf ("%*d.", 2,split->leaf_idx[i]); } printf ("[original leaves]\n\n");
 		}
 
     if (firstpass) { split->rfdistance = (int) (((double)(split->n_u1 + split->n_u2))/2.); firstpass = false; }
