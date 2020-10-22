@@ -46,16 +46,18 @@ Both cases are shown below, if you can install them system-wide:
 ### install missing libraries
 /home/simpson/$ apt-get install apt-get install libgtk2.0-dev libcairo2-dev
  ```
+  * The libraries rely on `pkg-config` to find their location: if your `pkg-config` was installed through conda then you'd
+better install the above libs via conda as well (or, you know, updating environmental variables etc)
 
 ### recommended software/libraries
-	- The R software for statistical computing (http://www.r-project.org/). It is useful for analysing the output of the program, plotting, etc. The following libraries for R are very handy:
+- The R software for statistical computing (http://www.r-project.org/). It is useful for analysing the output of the program, plotting, etc. The following libraries for R are very handy:
 		 - ape (http://cran.r-project.org/src/contrib/Descriptions/ape.html), for plotting the trees, calculating consensus trees, even estimating population parameters;
 		 - coda (http://cran.r-project.org/src/contrib/Descriptions/coda.html), for analysing and diagnosing MCMC simulations;
 		 - bioconductor (http://www.bioconductor.org/), for analysis of genomic data in general (I use it for creating nice figures).
-	- MrBayes (http://mrbayes.csit.fsu.edu/), for analysing the posterior distribution of topologies. In the first version of our program, MrBayes was necessary. From version 1.9 on the program biomc2.summarise can calculate the MAP topologies.
-	- paml (http://abacus.gene.ucl.ac.uk/software/paml.html), for simulating alignments along a given phylogeny.
-	- paup (http://paup.csit.fsu.edu/), for generating random topologies. This is not free software, so you may try the 'rtree' function from the "ape" package in R. The program 'biomc2.distance' also generates trees, but they are correlated by the recombination distance.
-  - gawk, perl; to play with the files
+- MrBayes (http://mrbayes.csit.fsu.edu/), for analysing the posterior distribution of topologies. In the first version of our program, MrBayes was necessary. From version 1.9 on the program biomc2.summarise can calculate the MAP topologies.
+- paml (http://abacus.gene.ucl.ac.uk/software/paml.html), for simulating alignments along a given phylogeny.
+- paup (http://paup.csit.fsu.edu/), for generating random topologies. This is not free software, so you may try the 'rtree' function from the "ape" package in R. The program 'biomc2.distance' also generates trees, but they are correlated by the recombination distance.
+- gawk, perl; to play with the files
 
 ## Programs
 
@@ -106,3 +108,15 @@ The program will also print to the stderr the mean and standard deviation of a f
 Usage: biomc2.sprdist tree1 tree2
 Calculates d_SPR between a pair of tree files and outputs the histogram of distances.  A file "recomb_leaves.txt" will contain the frequency of recombination for each leaf.  Remember that this frequency is an approximation. (this program is not described in  the paper and we don't use it yet). 
 
+
+
+## License
+SPDX-License-Identifier: GPL-3.0-or-later
+
+Copyright (C) 2008-today  [Leonardo de Oliveira Martins](https://github.com/leomrtns)
+
+This is free software; you can redistribute it and/or modify it under the terms of the GNU General Public
+License as published by the Free Software Foundation; either version 3 of the License, or (at your option) any later
+version (http://www.gnu.org/copyleft/gpl.html).
+
+![Anurag's github stats](https://github-readme-stats.vercel.app/api?username=leomrtns&count_private=true&show_icons=true&theme=calm)
