@@ -1,5 +1,6 @@
 # biomc2
 The software **biomc2** is a hierarchical Bayesian procedure to detect recombination in DNA sequence alignments based on the incongruence between topologies caused by recombinational events.
+It's worth remembering that it only works with up to 64 sequences (in 2008 this number looked much bigger :D )
 
 The model is described in the following publications:
   * Leonardo de Oliveira Martins, Élcio Leal and Hirohisa Kishino (2008) Phylogenetic Detection of Recombination with a Bayesian Prior on the Distance between Trees. _PLoS ONE_ 3(7): e2651. [doi:10.1371/journal.pone.0002651](http://www.plosone.org/article/info:doi/10.1371/journal.pone.0002651)
