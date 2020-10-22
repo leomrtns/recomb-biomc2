@@ -50,14 +50,13 @@ Both cases are shown below, if you can install them system-wide:
 better install the above libs via conda as well (or, you know, updating environmental variables etc)
 
 ### recommended software/libraries
-- The R software for statistical computing (http://www.r-project.org/). It is useful for analysing the output of the program, plotting, etc. The following libraries for R are very handy:
-		 - ape (http://cran.r-project.org/src/contrib/Descriptions/ape.html), for plotting the trees, calculating consensus trees, even estimating population parameters;
-		 - coda (http://cran.r-project.org/src/contrib/Descriptions/coda.html), for analysing and diagnosing MCMC simulations;
-		 - bioconductor (http://www.bioconductor.org/), for analysis of genomic data in general (I use it for creating nice figures).
-- MrBayes (http://mrbayes.csit.fsu.edu/), for analysing the posterior distribution of topologies. In the first version of our program, MrBayes was necessary. From version 1.9 on the program biomc2.summarise can calculate the MAP topologies.
-- paml (http://abacus.gene.ucl.ac.uk/software/paml.html), for simulating alignments along a given phylogeny.
+* The R software for statistical computing (http://www.r-project.org/). It is useful for analysing the output of the program, plotting, etc. The following libraries for R are very handy:
+  * ape (http://cran.r-project.org/src/contrib/Descriptions/ape.html), for plotting the trees, calculating consensus trees, even estimating population parameters;
+  * coda (http://cran.r-project.org/src/contrib/Descriptions/coda.html), for analysing and diagnosing MCMC simulations;
+  * bioconductor (http://www.bioconductor.org/), for analysis of genomic data in general (I use it for creating nice figures).
+* MrBayes (http://mrbayes.csit.fsu.edu/), for analysing the posterior distribution of topologies. In the first version of our program, MrBayes was necessary. From version 1.9 on the program biomc2.summarise can calculate the MAP topologies.
+* paml (http://abacus.gene.ucl.ac.uk/software/paml.html), for simulating alignments along a given phylogeny.
 - paup (http://paup.csit.fsu.edu/), for generating random topologies. This is not free software, so you may try the 'rtree' function from the "ape" package in R. The program 'biomc2.distance' also generates trees, but they are correlated by the recombination distance.
-- gawk, perl; to play with the files
 
 ## Programs
 
