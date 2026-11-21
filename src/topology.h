@@ -31,70 +31,18 @@
 #define _biomc2_topology_h_
 
 #include "nexus.h"
+#include "topology_splitset.h"
 
 typedef struct topol_node_struct* topol_node;
 typedef struct topology_struct* topology;
 typedef struct split_space_struct* split_space;
-typedef struct split_partition_struct split_partition;
-
-/*! \brief Compare two topologies based on their splits, here represented as
- * bit-strings (e.g. the pair 00110001, 11001110). */
-struct split_space_struct 
-{
-	/*! \brief Number of internal nodes. */
-	int inodes;
-	/*! \brief Number of leaves. */
-	int n_leaves;
-	/*! \brief Vector with pointers to split_partitions of topology 1. */
-	split_partition **u1; 
-	/*! \brief Vector with pointers to split_partitions of topology 2. */
-	split_partition **u2;
-	/*! \brief Split_partition vector size of topology 1. */
-	int n_u1; 
-	/*! \brief Split_partition vector size of topology 2. */
-	int n_u2;
-	/*! \brief Index of original leaves mapped to compressed leaves */
-	int *leaf_idx;
-	/*! \brief Leaves involved in recombination */
-	int *leaf_recomb;
-	/*! \brief Number of active leaves. */
-	int n_active;
-	/*! \brief Edges in agreement. */
-	split_partition **agree;
-	/*! \brief Number of edges in agreement. */
-	int n_agree;
-	/*! \brief List of possible prune subtrees in one direction. */
-	split_partition *dis1;
-	/*! \brief List of possible prune subtrees in oposite direction. */
-	split_partition *dis2;
-	/*! \brief List of pointers to possible prune subtrees (smallest between dis1 and dis2). */
-  split_partition **d_ptr;
-	/*! \brief Number of possible prune subtrees. */
-	int n_disagree;
-	/*! \brief Smallest XOR in agreement prune subtree. */
-	split_partition *best_prune;
-	/*! \brief Active leaves in mask notation (e.g. 001111). */
-  long long int active_l;
-	/*! \brief SPR distance, and RF distance */
-	int dSPR, rfdistance;
-	/*! \brief Pointer to opaque function that stores pruned subtrees (or does nothing) */ 
-	void (*extend_subtree_info) (int *index, int *idx_n, split_space split);
-	/*! \brief Pointer to opaque function that maps original leaves to compressed leaves (or does nothing) */
-	void (*store_compression_info) (int *to, int *from, split_space split);
-};
-
-/*! \brief Bit-string representation of splits. */
-struct split_partition_struct 
-{
-	/*! \brief Boolean vector with bipartition (poor man's bit string) (unused). */
-	int b[MaxLeaves];
-	/*! \brief Integer representation of bipartition (bit string) where "1" is the
-	 * side with fewer leaves (smaller subtree). */
-  long long int l;
-  /*! \brief Number of leaves present in smaller bipartition. */
-	int n;
-	/*! \brief Back-reference to node. */
-	topol_node node;
+typedef enum { METRIC_DSPR, METRIC_RF, METRIC_HDIST } tree_metric;
+struct split_space_struct {
+  int inodes, n_leaves, rfdistance;
+  int *leaf_recomb, *leaf_idx;
+  bool record_leaves;
+  tree_metric metric;
+  splitset work;
 };
 
 /*! \brief Information of a node (binary tree). */
@@ -115,7 +63,7 @@ struct topol_node_struct
 	/*! \brief If internal node, TRUE; if leaf, FALSE. */ 
 	bool internal;
 	/*! \brief Quartet partitioning (bipartition) induced by edge (leaf set rooted at node). */
-	split_partition bipartition;
+	bipartition split;
 	/*! \brief Are partial likelihoods (upper part) already calculated? */
 	bool u_done; 
 	/*! \brief Are partial likelihoods (lower part) already calculated? */
@@ -267,8 +215,7 @@ char * topology_to_string_with_name_generate_length (const topology T, char **ta
  * topol_node_struct::split_partition is updated. */
 void create_topology_bipartition_l (topology tree);
 
-/*! \brief Store bipartition information in post-order traversal */ 
-void postorder_mapping_bipartition (topol_node this, split_partition **u, int *n);
+
 
 /*! \brief Rearrange topol_node_struct::left and topol_node_struct::right where
  * smaller leaf is always on the left. */
@@ -286,78 +233,10 @@ int dSPR_topology_l (topology t1, topology t2, split_space split, int *max);
 /*! \brief Copy topol_node_struct::id to vector in pre-order traversal. */
 void euler_semitour_mapping (topol_node this, int *u, int *n);
 
-/* topology_split_partition.c */ 
-
-/*! \brief Allocate space for new split_space_struct. */
 split_space new_split_space (int n_leaves);
-
-/*!\brief Free memory allocated by split_space_struct. */
 void del_split_space (split_space split);
-
-/*! \brief Reset values of split_space_struct before new split bipartition calculation. */
-void initialize_split_space_l (split_space split);
-
-/*! \brief Extends \f$ d_{SPR} \f$ to give also the pruned leaves. Should be
- * called before each dSPR_topology_l() since it also initializes the vectors. */
 void setup_split_store_recomb_info (split_space split);
-
-/*! \brief \f$ d_{SPR} \f$ extension is not necessary. Can be called just once
- * (and is called by new_split_space() ). */ 
 void setup_split_dont_store_recomb_info (split_space split);
-
-/*! \brief Set bipartition of a leaf. */ 
-void split_initialize_l (split_partition *bpt, int label_id);
-
-/*! \brief Set bipartition of internal node. */
-void split_OR_l (split_partition *res, const split_partition *b1, const split_partition *b2);
-
-/*! \brief Set up split_partition_struct as being the smallest subtree it represents (at first iteration). */
-void split_minimize_initial_subtree_size_l (split_partition **u, int *n, split_space split);
-
-/*! \brief Set up split_partition_struct as being the smallest subtree it represents (general use). */
-void split_minimize_subtree_size_l (split_partition **u, int *n, split_space split);
-
-/*! \brief Search for common bipartitions, storing them in split_space_struct::agree. */
-void split_create_agreement_list_l (split_space split);
-
-/*! \brief Search for common bipartitions, storing them in split_space_struct::agree and 
- * updating topol_node_struct::map_id. */
-void split_create_agreement_list_mapping (split_space split);
-
-/*! \brief Remove edges (bipartitions) that are present in split_space_struct:agree. */
-void split_remove_agreement_edges_l (split_partition **u, int *n, split_space split);
-
-/*! \brief Remove redundant leaves in bipartitions when there is a subtree of
- * size 2, updating topol_node_struct::u_done or topol_node_struct::d_done. */
-void split_compress_subtree_agreement_topol (split_space split);
-
-/*! \brief Remove redundant leaves in bipartitions when there is a subtree of size 2. */
-void split_compress_subtree_agreement_l (split_space split);
-
-/*! \brief Calculate disagreement between all bipartition pairs, unless a
- * disagreement of size one (one leaf) is found. */
-void split_create_disagreement_list_l (split_space split);
-
-/*! \brief reduce split_space_struct::d_ptr size (created by split_create_disagreement_list_l())
- * by removing identical bipartitions. */
-void split_remove_duplicate_disagreement_l (split_space split);
-
-/*! \brief Compare split_space_struct::d_ptr (disagreement) and split_space_struct::agree 
- * (common subtrees) and search for best match. */
-void split_find_smallest_disagreement_subtree_l (split_space split);
-
-/*! \brief Reduce disagreement edges subtrees by removing partial subtrees in
- * agreement (unused). */
-void split_minimize_disagreement_l (split_space split);
-
-/*! \brief Remove leaves belonging to pruned subtree (smallest subtree in
- * disagreemtent. */
-void split_remove_pruned_subtree_l (split_partition *prune, split_space split);
-
-/*! \brief Print to stdout bit-string representation of bipartitition */
-void split_print_binary_bipartition_l (const split_partition *u, split_space split);
-
-/*! \brief Count number of leaves in split_partition_struct::l. */
-void split_bipartition_size_l (int *count, const long long int  *l, split_space split);
-
+tree_metric parse_tree_metric (const char *name);
+const char *tree_metric_name (tree_metric metric);
 #endif

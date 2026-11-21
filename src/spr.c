@@ -28,6 +28,8 @@
 
 #include "spr.h"
 
+void (*branch_swap) (topology p, bool done);
+
 /* Local variables */
 
 /*! \brief Vector with IDs of elegible or non-elegible nodes for swapping. */
@@ -53,10 +55,10 @@ void undo_udone (topol_node this);
 bool
 spr_apply_multiple_moves_eulertour (topology T, int n_moves)
 {
-	int inodes = T->nleaves-3, i, j, j2, k, k2, n_tries = 0;
+	int tour_length = T->nnodes-1, i, j, j2, k, k2, n_tries = 0;
 	int node_index[T->nnodes-1], sample = 32;
-	long long int euler_tour[n_moves+1][sample][inodes];
-	split_partition *spt[inodes];
+	int (*euler_tour)[sample][tour_length];
+
 	topol_node prune, regraft;
 	bool is_new = true;
 
@@ -67,11 +69,10 @@ spr_apply_multiple_moves_eulertour (topology T, int n_moves)
 		return true;
 	}
 	else { /* we do not check, but n_moves should be > 1 */
+		euler_tour = biomc2_malloc (((size_t)n_moves + 1) * sizeof *euler_tour);
 		create_topology_bipartition_l (T);
 		order_topology_by_bipartition (T->root->left);
-		i = 0; postorder_mapping_bipartition (T->root->left, (spt), &i);
-		/* original topology does not need sampling */
-		for (i=0; i < inodes; i++) euler_tour[0][0][i] = spt[i]->l;
+		i = 0; euler_semitour_mapping (T->root->left, euler_tour[0][0], &i);
 
 		/* first SPR */
 		for (k2=0; k2 < sample; k2++) { 
@@ -81,8 +82,7 @@ spr_apply_multiple_moves_eulertour (topology T, int n_moves)
 
 			create_topology_bipartition_l (T);
 			order_topology_by_bipartition (T->root->left);
-			i = 0; postorder_mapping_bipartition (T->root->left, (spt), &i);
-			for (i=0; i < inodes; i++) euler_tour[1][k2][i] = spt[i]->l;
+			i = 0; euler_semitour_mapping (T->root->left, euler_tour[1][k2], &i);
 			/* sample #sample topologies, use the last one */
 			if (k2 < (sample-1)) spr_apply_move_at_nodes (T, T->undo_prune, T->undo_regraft, true);
 		}
@@ -97,16 +97,15 @@ spr_apply_multiple_moves_eulertour (topology T, int n_moves)
 
 				create_topology_bipartition_l (T);
 				order_topology_by_bipartition (T->root->left);
-				i = 0; postorder_mapping_bipartition (T->root->left, (spt), &i);
-				for (i=0; i < inodes; i++) euler_tour[j][k2][i] = spt[i]->l;
+				i = 0; euler_semitour_mapping (T->root->left, euler_tour[j][k2], &i);
 				if (k2 < (sample-1)) spr_apply_move_at_nodes (T, T->undo_prune, T->undo_regraft, true);
 
 				/* euler_tour[i] is always != euler_tour [i-1] */
-				for (is_new = false, k=0; (k < inodes) && (!is_new); k++)
+				for (is_new = false, k=0; (k < tour_length) && (!is_new); k++)
 					if (euler_tour[j][k2][k] != euler_tour[0][0][k]) is_new = true;
 				for (i = 1; (i<j-1) && (is_new); i++)
 					for (j2=0; (j2 < sample) && (is_new); j2++) 
-						for (is_new = false, k=0; (k < inodes) && (!is_new); k++)
+						for (is_new = false, k=0; (k < tour_length) && (!is_new); k++)
 							if (euler_tour[j][k2][k] != euler_tour[i][j2][k]) is_new = true;
 
 				if (!is_new) {
@@ -114,7 +113,7 @@ spr_apply_multiple_moves_eulertour (topology T, int n_moves)
 					n_tries++;
 					/* try again the same distance */
 					if (k2 == (sample - 1)) {
-						if (n_tries > 16) return false;
+						if (n_tries > 16) { free (euler_tour); return false; }
 						spr_apply_move_at_nodes (T, T->undo_prune, T->undo_regraft, true);
 						j--;
 					}
@@ -122,6 +121,7 @@ spr_apply_multiple_moves_eulertour (topology T, int n_moves)
 			}
 		
 		} // for (j <= n_moves)
+		free (euler_tour);
 		
 		return true;
 	} // else 

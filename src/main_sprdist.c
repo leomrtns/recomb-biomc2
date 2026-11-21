@@ -16,19 +16,21 @@ main (int argc, char **argv)
 
   time0 = clock ();
 
-  if (argc != 3){
-    biomc2_error ( " USAGE: %s <tree file 1> <tree file 2>", basename (argv[0]));
+  if (argc != 3 && argc != 4){
+    biomc2_error ( " USAGE: %s <tree file 1> <tree file 2> [dspr|rf|hdist]", basename (argv[0]));
   }
 
   fprintf (stderr, "|\t %s\n| Recombination detection program based on segment-wise topology distance\n", ProgramVersion);
   fprintf (stderr, "|\t Leonardo de Oliveira Martins and Hirohisa Kishino\n|\n");
   fprintf (stderr, "| This program is protected by the GPL license \n|\n");
-  fprintf (stderr, "|\t \t Distribution of SPR distances \n\n");
+
 
   /* read topologies information */
   t1 = read_nexus_treespace_file (argv[1]);
   p1 = (topology*) biomc2_malloc (t1->ntrees * sizeof (topology));
   split = new_split_space (t1->nleaves);
+  if (argc == 4) split->metric = parse_tree_metric (argv[3]);
+  fprintf (stderr, "Distribution of %s distances\n", tree_metric_name (split->metric));
 
   label_order = (int*) biomc2_malloc (t1->nleaves * sizeof (int));
   /* order leaves (id numbers) based on t1->taxlabel_hash; mapping is stored in label_order */
@@ -101,31 +103,34 @@ remove_duplicate_trees (topology *p, int ntrees, split_space split)
 void
 summarise_treespace (topology *p1, topology *p2, int distinct1, int distinct2, split_space split, nexus_treespace t1)
 {
-	int histogram[p1[0]->nleaves], i, j, k, dist;
-	int recomb_sp[p1[0]->nleaves], n_recomb = 0, freq;
-	FILE *outfile;
-	for (i=0; i < p1[0]->nleaves; i++) { histogram[i] = 0; recomb_sp[i] = 0; }
+  int n = split->n_leaves, bins = n;
+  long long *histogram = biomc2_malloc (bins * sizeof *histogram);
+  long long recomb_sp[n], n_recomb = 0;
+  FILE *outfile;
+  for (int i=0; i < n; i++) histogram[i] = recomb_sp[i] = 0;
 
-  for (i=0; i < distinct1; i++)
-    for (j=0; j < distinct2; j++) {
-			setup_split_store_recomb_info (split);
-      dist = dSPR_topology_l (p1[i], p2[j], split, &(split->inodes));
-			freq = (p1[i]->tfreq * p2[j]->tfreq);
-			histogram[dist] += freq;
-			if (dist) {
-				n_recomb += freq;
-				for (k=0; k < p1[0]->nleaves; k++) if (split->leaf_recomb[k])
-					recomb_sp[k] += freq;
-			}
-		}
-
-  for (i=0; i < p1[0]->nleaves; i++) 
-    printf ("%d\t %d\n", i, histogram[i]);
+  for (int i=0; i < distinct1; i++) for (int j=0; j < distinct2; j++) {
+    if (split->metric == METRIC_DSPR) setup_split_store_recomb_info (split);
+    int dist = dSPR_topology_l (p1[i], p2[j], split, &split->inodes);
+    long long freq = (long long)p1[i]->tfreq * p2[j]->tfreq;
+    if (dist >= bins) {
+      histogram = biomc2_realloc (histogram, ((size_t)dist+1) * sizeof *histogram);
+      while (bins <= dist) histogram[bins++] = 0;
+    }
+    histogram[dist] += freq;
+    if (dist && split->metric == METRIC_DSPR) {
+      n_recomb += freq;
+      for (int k=0; k < n; k++) if (split->leaf_recomb[k]) recomb_sp[k] += freq;
+    }
+  }
+  for (int i=0; i < bins; i++) printf ("%d\t %lld\n", i, histogram[i]);
+  free (histogram);
+  if (split->metric != METRIC_DSPR) return;
 
 	outfile = biomc2_fopen ("recomb_leaves.txt", "w");
 	fprintf (outfile, "taxon \t rfreq\n");
-	for (i=0; i < p1[0]->nleaves; i++) 
-		fprintf (outfile, "%s \t %f\n", t1->taxlabel[i], ((double) recomb_sp[i])/((double) n_recomb) );
+	for (int i=0; i < p1[0]->nleaves; i++)
+		fprintf (outfile, "%s \t %f\n", t1->taxlabel[i], n_recomb ? (double)recomb_sp[i]/n_recomb : 0. );
 	fclose (outfile);
 }
 

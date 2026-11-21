@@ -26,10 +26,33 @@
 
 /* local variables */
 
-int s1, s2, site;
-double lnLikSequence = 0., LikSite,
-			 lkl, lkr,
-			 **up, **down, **sister, **left, **right;
+static int s1, s2, site;
+static double LikSite;
+static site_partial *up, *down, *sister, *left, *right;
+
+/* Rescale by an exact power of two before a large clade underflows. Moving
+ * the fifth value with the four states also preserves scales on cache swaps. */
+static void
+combine_partials (phylogeny p, site_partial *out, site_partial *a, site_partial *b)
+{
+  for (int i=0; i < p->nchar; i++) {
+    double largest = 0.;
+    for (int x=0; x < 4; x++) {
+      double l = 0., r = 0.;
+      for (int y=0; y < 4; y++) {
+        l += p->Q[x][y] * a[i][y];
+        r += p->Q[x][y] * b[i][y];
+      }
+      out[i][x] = l * r;
+      if (out[i][x] > largest) largest = out[i][x];
+    }
+    out[i][4] = a[i][4] + b[i][4];
+    if (largest < 0x1p-256 && largest > 0.) {
+      for (int x=0; x < 4; x++) out[i][x] *= 0x1p256;
+      out[i][4] -= 256. * 0.69314718055994530942;
+    }
+  }
+}
 
 /* local function prototypes */
 void          update_likelihood (phylogeny *p, topol_node this, topology t);
@@ -107,7 +130,7 @@ ln_likelihood (phylogeny *p, topology t)
 			LikSite = 0.;
 			for (s1 = 0; s1 < 4; s1++) for (s2 = 0; s2 < 4; s2++)
 				LikSite+= p[i]->pi[s1] * up[site][s1] * p[i]->Q[s1][s2] * down[site][s2];
-			p[i]->likelihood_proposal	+= ( p[i]->site_weight[site] * log (LikSite) );
+			p[i]->likelihood_proposal	+= ( p[i]->site_weight[site] * (log (LikSite) + up[site][4] + down[site][4]) );
 		}
 		t->likelihood_proposal += p[i]->likelihood_proposal;
 	}
@@ -124,14 +147,7 @@ update_likelihood (phylogeny *p, topol_node this, topology t)
     left = p[i]->l[this->left->id]->d_current->next->lk;
     right = p[i]->l[this->right->id]->d_current->next->lk;
 
-    for (site = 0; site < p[i]->nchar; site++) for (s1 = 0; s1 < 4; s1++) {
-      lkl = lkr = 0.0;
-			for (s2 = 0; s2 < 4; s2++) {
-				lkl += p[i]->Q[s1][s2] * left[site][s2];
-				lkr += p[i]->Q[s1][s2] * right[site][s2];
-			} //for (s2 < 4)
-			p[i]->l[this->id]->d_current->next->lk[site][s1] = lkr * lkl;
-		} // for (s1 < 4)
+    combine_partials (p[i], p[i]->l[this->id]->d_current->next->lk, left, right);
   }
 }
 
@@ -163,14 +179,7 @@ update_accepted_likelihood (phylogeny *p, topol_node this, topol_node upnode, to
 		up     = p[i]->l[upnode->id]->u_current->lk;
 		sister = p[i]->l[this->sister->id]->d_current->lk;
 
-		for (site = 0; site < p[i]->nchar; site++) for (s1 = 0; s1 < 4; s1++) {
-			lkl = lkr = 0.0;
-			for (s2 = 0; s2 < 4; s2++) {
-				lkl += p[i]->Q[s1][s2] * up[site][s2];
-				lkr += p[i]->Q[s1][s2] * sister[site][s2];
-			} //for (s2 < 4)
-			p[i]->l[this->id]->u_current->lk[site][s1] = lkr * lkl;
-		} // for (s1 < 4)
+		combine_partials (p[i], p[i]->l[this->id]->u_current->lk, up, sister);
 
 	}
 
@@ -220,7 +229,7 @@ ln_likelihood_moved_branches (phylogeny *p, topology t)
 			LikSite = 0.;
 			for (s1 = 0; s1 < 4; s1++) for (s2 = 0; s2 < 4; s2++)
 				LikSite+= p[i]->pi[s1] * up[site][s1] * p[i]->Q[s1][s2] * down[site][s2];
-			p[i]->likelihood_proposal	+= ( p[i]->site_weight[site] * log (LikSite) );
+			p[i]->likelihood_proposal	+= ( p[i]->site_weight[site] * (log (LikSite) + up[site][4] + down[site][4]) );
 		}
 		t->likelihood_proposal += p[i]->likelihood_proposal;
 	}
@@ -249,14 +258,7 @@ update_likelihood_moved_branches (phylogeny *p, topol_node this, topology t)
       right = p[i]->l[this->right->id]->d_current->next->lk;
 
 
-		for (site = 0; site < p[i]->nchar; site++) for (s1 = 0; s1 < 4; s1++) {
-			lkl = lkr = 0.0;
-			for (s2 = 0; s2 < 4; s2++) {
-				lkl += p[i]->Q[s1][s2] * left[site][s2];
-				lkr += p[i]->Q[s1][s2] * right[site][s2];
-			} //for (s2 < 4)
-			p[i]->l[this->id]->d_current->next->lk[site][s1] = lkr * lkl;
-		} // for (s1 < 4)
+		combine_partials (p[i], p[i]->l[this->id]->d_current->next->lk, left, right);
 
 	}
 }
@@ -322,14 +324,7 @@ update_accepted_likelihood_moved_branches (phylogeny *p, topol_node this, topol_
 		up     = p[i]->l[upnode->id]->u_current->lk;
 		sister = p[i]->l[this->sister->id]->d_current->lk;
 
-		for (site = 0; site < p[i]->nchar; site++) for (s1 = 0; s1 < 4; s1++) {
-			lkl = lkr = 0.0;
-			for (s2 = 0; s2 < 4; s2++) {
-				lkl += p[i]->Q[s1][s2] * up[site][s2];
-				lkr += p[i]->Q[s1][s2] * sister[site][s2];
-			} //for (s2 < 4)
-			p[i]->l[this->id]->u_current->lk[site][s1] = lkr * lkl;
-		} // for (s1 < 4)
+		combine_partials (p[i], p[i]->l[this->id]->u_current->lk, up, sister);
 
 	}
 
@@ -352,7 +347,7 @@ ln_likelihood_proposal (phylogeny p, topology t)
 		LikSite = 0.;
 		for (s1 = 0; s1 < 4; s1++) for (s2 = 0; s2 < 4; s2++)
 			LikSite+= (p->pi[s1] * up[site][s1] * p->Q[s1][s2] * down[site][s2]);
-		p->likelihood_proposal += p->site_weight[site] * log (LikSite);
+		p->likelihood_proposal += p->site_weight[site] * (log (LikSite) + up[site][4] + down[site][4]);
 	}
 }
 
@@ -365,16 +360,7 @@ update_likelihood_proposal (phylogeny p, topol_node this)
 	left  = p->l[this->left->id]->d_accepted->next->lk;
 	right = p->l[this->right->id]->d_accepted->next->lk;
 	
-	for (site = 0; site < p->nchar; site++) {
-		for (s1 = 0; s1 < 4; s1++) {
-			lkl = lkr = 0.0;
-			for (s2 = 0; s2 < 4; s2++) {
-				lkl += p->Q[s1][s2] * left[site][s2];
-				lkr += p->Q[s1][s2] * right[site][s2];
-			} //for (s2 < 4)
-			p->l[this->id]->d_accepted->next->lk[site][s1] = lkr * lkl;
-		} // for (s1 < 4)
-	} // for (site)
+	combine_partials (p, p->l[this->id]->d_accepted->next->lk, left, right);
 }
 
 void 
@@ -398,16 +384,7 @@ update_accepted_likelihood_proposal (phylogeny p, topol_node this, topol_node up
 	up     = p->l[upnode->id]->u_accepted->lk;
 	sister = p->l[this->sister->id]->d_accepted->lk;
 	
-	for (site = 0; site < p->nchar; site++) {
-		for (s1 = 0; s1 < 4; s1++) {
-			lkl = lkr = 0.0;
-			for (s2 = 0; s2 < 4; s2++) {
-				lkl += p->Q[s1][s2] * up[site][s2];
-				lkr += p->Q[s1][s2] * sister[site][s2];
-			} //for (s2 < 4)
-			p->l[this->id]->u_accepted->lk[site][s1] = lkr * lkl;
-		} // for (s1 < 4)
-	} // for (site)
+	combine_partials (p, p->l[this->id]->u_accepted->lk, up, sister);
 	
 	if (this->left->internal)  update_accepted_likelihood_proposal (p, this->left, this);
 	if (this->right->internal) update_accepted_likelihood_proposal (p, this->right, this);

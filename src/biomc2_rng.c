@@ -24,13 +24,15 @@
 
 #include "biomc2_rng.h"
 
+biomc2_rng random_number;
+
 /*! \brief formula for Tausworthe number generation */
 #define TAUSWORTHE(s,a,b,c,d) (((s &c) <<d) &RNG_MAX_VALUE) ^ ((((s <<a) &RNG_MAX_VALUE)^s) >>b)
 
 /*! \brief returns a random number between 0 and RNG_MAX_VALUE */ 
-inline unsigned long int biomc2_rng_get (biomc2_rng r);
+static inline unsigned long int biomc2_rng_get (biomc2_rng r);
 /*! \brief Sets the new seed \f$s\f$ for the random generator. */
-inline void biomc2_rng_set (biomc2_rng r, unsigned long int s);
+static inline void biomc2_rng_set (biomc2_rng r, unsigned long int s);
 
 double
 biomc2_rng_uniform (biomc2_rng r)
@@ -56,7 +58,7 @@ biomc2_rng_uniform_int (biomc2_rng r, unsigned long int n)
   return k;
 }
 
-inline unsigned long int
+static inline unsigned long int
 biomc2_rng_get (biomc2_rng r)
 {
   r->s1 = TAUSWORTHE (r->s1, 13, 19, 4294967294UL, 12);
@@ -65,7 +67,7 @@ biomc2_rng_get (biomc2_rng r)
   return (r->s1 ^ r->s2 ^ r->s3);
 }
 
-inline void
+static inline void
 biomc2_rng_set (biomc2_rng r, unsigned long int s)
 {
 	r->s1 = ((69069 * s) & RNG_MAX_VALUE);

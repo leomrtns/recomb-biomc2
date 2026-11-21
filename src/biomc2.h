@@ -44,8 +44,11 @@
 #include <stdio.h> 
 /* random number, searching, sorting [ANSI C C89] */
 #include <stdlib.h>
+#include <stdbool.h>
 /* string manipulation [ANSI C C89] */
 #include <string.h>
+#include <strings.h>
+#include <libgen.h>
 /* Access to va_arg, va_list [ANSI C C89] */
 #include <stdarg.h>
 /* char operation functions (e.g. isspace() ), case convertion [ANSI C C89] */
@@ -68,21 +71,16 @@
 /*! \brief Program name and version (from autoconf) */
 #define ProgramVersion PACKAGE_STRING 
 
-#define true  1 /*!< Boolean TRUE  */
-#define false 0 /*!< Boolean FALSE */
 
 #define MIN(x,y) (((x)<(y)) ? (x) : (y))
 #define MAX(x,y) (((x)>(y)) ? (x) : (y))
 #define MOD(a)   (((a)>0)   ? (a) :(-a))
 
-/*! \brief Maximum number of taxa the current implementation can handle 
-	(owing to the split size limitation of 64 bits) */
-#define MaxLeaves 64
+
 
 /* Global Structures */
 
-/*! \brief Mnemonic for boolean (char is smaller than int) */
-typedef unsigned char bool;
+
 
 /*! \brief Memory-safe malloc() function.
  *

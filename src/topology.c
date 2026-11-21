@@ -27,13 +27,6 @@
 
 /* local funtion prototypes */
 
-/*! \brief Auxiliary function to topology_to_string(). */
-void topology_subtree_to_string (char *str, const topol_node node);
-/*! \brief Auxiliary function to topology_to_string_with_name(). */
-void topology_subtree_to_string_with_name (char *str, const topol_node node, char **taxlabel);
-/*! \brief Auxiliary function to topology_to_string_with_name_generate_length(). */
-void topology_subtree_to_string_with_name_generate_length (char *str, const topol_node node, char **taxlabel,
-																													 double *min_length, double *max_length);
 
 topology
 new_topology (int nleaves) 
@@ -42,8 +35,7 @@ new_topology (int nleaves)
   int i;
 	size_t sizeof_node = sizeof (struct topol_node_struct);
 
-  if (nleaves > MaxLeaves)
-	biomc2_error ( "number of leaves > %d\n", MaxLeaves);
+
 
   tree = 
   (topology) biomc2_malloc (sizeof (struct topology_struct));
@@ -61,8 +53,8 @@ new_topology (int nleaves)
   for (i=0; i<tree->nleaves; i++) { 
     tree->nodelist[i] = (topol_node) biomc2_malloc (sizeof_node);
 		tree->nodelist[i]->internal = false;
-		tree->nodelist[i]->bipartition.node = tree->nodelist[i];
-		split_initialize_l (&(tree->nodelist[i]->bipartition), i);
+		tree->nodelist[i]->split = new_bipartition (nleaves);
+		bipartition_initialize (tree->nodelist[i]->split, i);
 		tree->nodelist[i]->u_done = false; 
 		tree->nodelist[i]->d_done = true;
 		tree->nodelist[i]->left = tree->nodelist[i]->right = NULL;
@@ -73,7 +65,7 @@ new_topology (int nleaves)
   for (i=tree->nleaves; i<tree->nnodes; i++) { 
     tree->nodelist[i] = (topol_node) biomc2_malloc (sizeof_node);
 		tree->nodelist[i]->internal = true;
-		tree->nodelist[i]->bipartition.node = tree->nodelist[i];
+		tree->nodelist[i]->split = new_bipartition (nleaves);
 		tree->nodelist[i]->u_done = tree->nodelist[i]->d_done = true;
 		tree->nodelist[i]->map_id = tree->nodelist[i]->id = i;
   }
@@ -91,7 +83,8 @@ del_topology (topology tree)
     if (tree->nodelist) {
       int i;
       for (i=tree->nnodes-1; i >=0; i--) {
-        if (tree->nodelist[i]) free (tree->nodelist[i]);
+        del_bipartition (tree->nodelist[i]->split);
+        free (tree->nodelist[i]);
       }
       free (tree->nodelist);
     }
@@ -239,95 +232,55 @@ reroot_topology (topology tree, topol_node newroot)
 	return newroot;
 }
 
-char *
-topology_to_string (const topology tree) 
+/* Return the next free character so emitting a tree takes linear time in its Newick length. */
+static char *
+write_subtree (char *out, topol_node node, char **labels, const double *lengths)
 {
-	char *str;
-	/* allocate space for str (overestimate size) */
-	int size = tree->nnodes * 4 + tree->nleaves * 8;
-	
-	str = (char *) biomc2_malloc (sizeof (char) * size);
-  memset (str, 0, sizeof (char) * size);
-	sprintf (str, "(%d,", tree->root->id+1);
-	topology_subtree_to_string (str, tree->root->left);
-  sprintf (str, "%s);", str);
-	return str;
-}
-
-void
-topology_subtree_to_string (char *str, const topol_node node)
-{
-	if (node->internal) { /* internal node */
-		sprintf (str, "%s(", str);
-		topology_subtree_to_string (str, node->left);
-		sprintf (str, "%s,", str);
-		topology_subtree_to_string (str, node->right);
-		sprintf (str, "%s)", str);
-	}
-	else sprintf (str, "%s%d", str, node->id+1);
-}
-
-
-char *
-topology_to_string_with_name (const topology T, char **taxlabel)
-{
- 	char *str;
-  int size = 1 + T->nnodes * 4, i;
-  /* allocate space for str (overestimate size) */
-  for (i=0; i < T->nleaves; i++) size += strlen (taxlabel[i]) + 1;
-
-  str = (char *) biomc2_malloc (sizeof (char) * size);
-  memset (str, 0, sizeof (char) * size);
-  sprintf (str, "(%s,", taxlabel[T->root->id]);
-	topology_subtree_to_string_with_name (str, T->root->left, taxlabel);
-  sprintf (str, "%s);",str);
-  return str;
-}
-
-void
-topology_subtree_to_string_with_name (char *str, const topol_node node, char **taxlabel)
-{
-  if (node->internal) { /* internal node */
-    sprintf (str, "%s(", str);
-    topology_subtree_to_string_with_name (str, node->left, taxlabel);
-    sprintf (str, "%s,", str);
-		topology_subtree_to_string_with_name (str, node->right, taxlabel);
-    sprintf (str, "%s)", str);
+  if (node->internal) {
+    *out++ = '(';
+    out = write_subtree (out, node->left, labels, lengths);
+    *out++ = ',';
+    out = write_subtree (out, node->right, labels, lengths);
+    *out++ = ')';
   }
-  else sprintf (str, "%s%s", str, taxlabel[node->id]);
+  else if (labels) out += sprintf (out, "%s", labels[node->id]);
+  else out += sprintf (out, "%d", node->id + 1);
+  if (lengths) out += sprintf (out, ":%.4f", lengths[0] + lengths[1] * biomc2_rng_uniform_pos (random_number));
+  return out;
+}
+
+static char *
+write_tree (topology tree, char **labels, const double *lengths)
+{
+  size_t size = (size_t)tree->nnodes * 4 + 8;
+  for (int i=0; i < tree->nleaves; i++) size += labels ? strlen (labels[i]) : 12;
+  if (lengths) size += ((size_t)tree->nnodes + 1) * 320; /* decimal expansion of a finite double */
+  char *result = biomc2_malloc (size), *out = result;
+  *out++ = '(';
+  out = write_subtree (out, tree->root, labels, lengths);
+  *out++ = ',';
+  out = write_subtree (out, tree->root->left, labels, lengths);
+  *out++ = ')';
+  if (lengths) out += sprintf (out, ":%.4f", lengths[0] + lengths[1] * biomc2_rng_uniform_pos (random_number));
+  strcpy (out, ";");
+  return result;
 }
 
 char *
-topology_to_string_with_name_generate_length (const topology T, char **taxlabel, double min_length, double max_length)
+topology_to_string (const topology tree)
 {
-  char *str;
-  int size = 1 + T->nnodes * 4, i;
-  /* allocate space for str (overestimate size) */
-  for (i=0; i < T->nleaves; i++) size += strlen (taxlabel[i]) + 1;
-  size *= 6;
-
-  str = (char *) biomc2_malloc (sizeof (char) * size);
-  memset (str, 0, sizeof (char) * size);
-	sprintf (str, "(%s:%.4f,", taxlabel[T->root->id], 
-					 min_length + max_length * biomc2_rng_uniform_pos (random_number));
-  topology_subtree_to_string_with_name_generate_length (str, T->root->left, taxlabel, &min_length, &max_length);
-  sprintf (str, "%s):%.4f;",str, min_length + max_length * biomc2_rng_uniform_pos (random_number));
-  return str;
+  return write_tree (tree, NULL, NULL);
 }
 
-void
-topology_subtree_to_string_with_name_generate_length (char *str, const topol_node node, char **taxlabel, 
-																											double *min_length, double *max_length)
+char *
+topology_to_string_with_name (const topology tree, char **labels)
 {
-  if (node->internal) { /* internal node */
-    sprintf (str, "%s(", str);
-    topology_subtree_to_string_with_name_generate_length (str, node->left, taxlabel, min_length, max_length);
-    sprintf (str, "%s,", str);
-    topology_subtree_to_string_with_name_generate_length (str, node->right, taxlabel, min_length, max_length); 
-    sprintf (str, "%s):%.4f", str, (*min_length) + (*max_length) * biomc2_rng_uniform_pos (random_number));
-  }
-	else sprintf (str, "%s%s:%.4f", str, taxlabel[node->id], 
-								(*min_length) + (*max_length) * biomc2_rng_uniform_pos (random_number));
+  return write_tree (tree, labels, NULL);
 }
 
-
+char *
+topology_to_string_with_name_generate_length (const topology tree, char **labels, double min, double max)
+{
+  double lengths[] = {min, max};
+  return write_tree (tree, labels, lengths);
+}

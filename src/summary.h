@@ -26,8 +26,6 @@
 #ifndef _biomc2_summary_h
 #define _biomc2_summary_h
 
-#include <cairo.h>
-#include <cairo-pdf.h>
 
 #include "empirical_frequency.h"
 
@@ -39,6 +37,7 @@ struct summary_struct
 {
 	/*  From post.dist file */
 
+  char metric[8]; /* distance recorded in the sampler trace */
   /*! \brief Number of segments. */
   int n_segments;
   /*! \brief Number of samples (after removal of duplicate samples). */
@@ -141,8 +140,7 @@ mosaic new_mosaic (int n_breakpoints);
 void del_mosaic (mosaic m);
 
 /* from summary_plot.c */
-void plot_post_recomb_freq (summary sm);
-void plot_empirical_frequency (empfreq e, char *filename, char *title, double width, double height, double border);
+void write_breakpoint_profile (summary sm);
 
 
 /* from summary_cluster.c */

@@ -1,1 +1,14 @@
 /build
+/.work/
+/autom4te.cache/
+/configure
+/configure~
+/Makefile.in
+/src/Makefile.in
+/src/config.h.in
+/src/config.h.in~
+/aclocal.m4
+/compile
+/depcomp
+/install-sh
+/missing

@@ -38,6 +38,9 @@ nsegments = 64
 [ usually (n_taxa - 3), but can be smaller ]
 [ zero will give a model where distance is 0 (same topo) or 1 (recomb) ]
 
+[ Tree distance between neighbouring segments: dspr, rf or hdist ]
+metric = dspr
+
 maxdist   = 5
 
 [ ngen is total number of generations after warmup                      ]

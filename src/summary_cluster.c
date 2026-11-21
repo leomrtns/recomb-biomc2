@@ -136,7 +136,7 @@ single_distance_bp_loc (int *v1, int n1, int *v2, int n2)
 
   /* v2[0] = 0 and v2[n2+1] = sm->n_sites, so we have two "artificial" breakpoints */
   for (i=1; i < n1+1; i++) {
-    d1 = v1[i] - v2[j-1]; d2 = MOD(d2);
+    d1 = abs (v1[i] - v2[j-1]);
     d2 = v1[i] - v2[j]; d2 = MOD(d2);
     while ((d2 < d1) && (j <= n2)) { 
       d1 = d2; 
@@ -156,49 +156,25 @@ single_distance_bp_loc (int *v1, int n1, int *v2, int n2)
 mosaic
 new_mosaic_from_centroid (summary sm)
 {
-  int i, j, dist, dist_sum = 0, min_dist = 0;
-  int idx_best, nSPR_best;
+  int i, j, idx_best = 0;
+  long long *loss = biomc2_malloc (sm->n_samples * sizeof *loss);
   mosaic m;
-  empfreq e;
-  
-  e = new_empfreq (sm->n_samples);
 
-  for (i=0; i < sm->n_samples-1; i++) {
-    for (j=i+1; j < sm->n_samples; j++) {
-      dist = pair_distance_bp_loc (i, j, sm);
-      e->i[i].freq += (sm->w_sample[j] * dist);
-      e->i[j].freq += (sm->w_sample[i] * dist);
-    } 
-    /* the particular value of min_dist don't have any importance, we just need a big number. OTOH, the empfreq->freq
-     * values can become really large (can we have overflow?). */
-    if (min_dist < e->i[i].freq) min_dist = e->i[i].freq;
+  for (i=0; i < sm->n_samples; i++) loss[i] = 0;
+  for (i=0; i < sm->n_samples-1; i++) for (j=i+1; j < sm->n_samples; j++) {
+    int dist = pair_distance_bp_loc (i, j, sm);
+    loss[i] += (long long)sm->w_sample[j] * dist;
+    loss[j] += (long long)sm->w_sample[i] * dist;
   }
-
-  nSPR_best = min_dist = 100 * min_dist; /* just a big number as well */
-  for (i=0; i < sm->n_samples; i++) {
-    dist_sum += e->i[i].freq;
-    if (e->i[i].freq < min_dist) min_dist = e->i[i].freq;
-  }
-
-  /* If there is more than one (distinct) ensemble centroid, we pick up the one with smallest overall SPR
-   * distance (not only breakpoints). This should work since samples belonging to the centroid usually have identical
-   * mosaic structures. Another solution would be to average over all minimum-distance samples. The _real_ solution 
-   * would be to find the centroid by (least squares) minimization (since the _real_ centroid may not represented by 
-   * any sample. */
-  for (i=0; i < sm->n_samples; i++) 
-    if ((e->i[i].freq == min_dist) && (sm->nSPR[i] < nSPR_best)) 
-     { nSPR_best = sm->nSPR[i]; idx_best = i; }
-
+  for (i=1; i < sm->n_samples; i++)
+    if (loss[i] < loss[idx_best] || (loss[i] == loss[idx_best] && sm->nSPR[i] < sm->nSPR[idx_best]))
+      idx_best = i;
+  free (loss);
   m = new_mosaic (sm->nCOP[idx_best]); j = 0;
   /* bp_loc has the site position, but here we need the index so that we can map to the topology vector */
   for (i=0; i < sm->n_segments-1; i++) if (sm->dSPR[i][idx_best]) m->loc_idx[j++] = i;
 
-  /* credible interval based on the 95% samples closest to the centroid */
-//  sort_empfreq_increasing (e);
-
   create_mosaic_topology_distribution (m, sm);
-
-  del_empfreq (e);
   return m;
 }
 
@@ -209,6 +185,7 @@ new_mosaic_from_quantile (summary sm, double credible_interval)
   double partial_sum, step_sum, q1_sum, q2_sum, q3_sum; 
   mosaic m = new_mosaic (sm->nCOP_freq->i[0].idx);
 
+  if (!m->n) { create_mosaic_topology_distribution (m, sm); return m; }
   step_sum = (double)(sm->recomb_freq_sum)/(double)(sm->nCOP_freq->i[0].idx);
   q1_sum = ((1.-credible_interval)/2.) * step_sum;
   q2_sum = 0.5   * step_sum; 
@@ -223,14 +200,19 @@ new_mosaic_from_quantile (summary sm, double credible_interval)
   }
 
   /* just in case (if we have some weird roundoff error or I made some mistake) */
-  if (i1 < sm->nCOP_freq->i[0].idx) for (i=i1; i<sm->nCOP_freq->i[0].idx; i++) m->cd1[i] = sm->recomb_freq[sm->n_segments-2];
-  if (i2 < sm->nCOP_freq->i[0].idx) for (i=i2; i<sm->nCOP_freq->i[0].idx; i++) m->loc_idx[i] = sm->recomb_freq[sm->n_segments-2];
-  if (i3 < sm->nCOP_freq->i[0].idx) for (i=i3; i<sm->nCOP_freq->i[0].idx; i++) m->cd2[i] = sm->recomb_freq[sm->n_segments-2];
+  if (i1 < sm->nCOP_freq->i[0].idx) for (i=i1; i<sm->nCOP_freq->i[0].idx; i++) m->cd1[i] = sm->n_segments-2;
+  if (i2 < sm->nCOP_freq->i[0].idx) for (i=i2; i<sm->nCOP_freq->i[0].idx; i++) m->loc_idx[i] = sm->n_segments-2;
+  if (i3 < sm->nCOP_freq->i[0].idx) for (i=i3; i<sm->nCOP_freq->i[0].idx; i++) m->cd2[i] = sm->n_segments-2;
   
+  /* Reserve one distinct boundary for each remaining mosaic segment. */
+  for (i=0; i < m->n; i++) {
+    int last = sm->n_segments - 1 - (m->n - i);
+    if (m->loc_idx[i] > last) m->loc_idx[i] = last;
+    if (i && m->loc_idx[i] <= m->loc_idx[i-1]) m->loc_idx[i] = m->loc_idx[i-1] + 1;
+  }
   create_mosaic_topology_distribution (m, sm);
   return m;
 }
-
 
 void
 create_mosaic_topology_distribution (mosaic m, summary sm)

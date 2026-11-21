@@ -218,10 +218,12 @@ read_interleaved_nexus_sequence (char *line, nexus_alignment align) /* localfunc
 		insert_hashtable (align->taxlabel_hash, seqname, position);
 	}
 	line = remove_space_from_string (line+namelength);
-  if ((last = strchr (line, ';')))
-    strncat (align->character[position], line, last - line - 1);
-	else
-		strncat (align->character[position], line, strlen (line));
+  last = strchr (line, ';');
+  size_t used = strlen (align->character[position]);
+  size_t count = last ? (size_t)(last - line) : strlen (line);
+  if (used + count > (size_t)align->nchar) biomc2_error ("sequence exceeds NCHAR for %s", seqname);
+  memcpy (align->character[position] + used, line, count);
+  align->character[position][used + count] = '\0';
 }
 
 char *

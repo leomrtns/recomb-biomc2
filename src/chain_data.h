@@ -57,15 +57,16 @@ typedef struct
 } acceptance_frequency;
 
 /*! \brief Strings with names of acceptance moves (long version). */
-char *acceptance_names[AFREQSIZE]; 
+extern char *acceptance_names[AFREQSIZE];
 /*! \brief Strings with names of acceptance moves (short version, for headers). */
-char *a_names[AFREQSIZE]; 
+extern char *a_names[AFREQSIZE];
 
 typedef struct chain_data_struct* chain_data;
 
 /*! \brief MCMC chain data (topologies, likelihoods, sampler parameters, etc.). */
 struct chain_data_struct
 {
+  tree_metric metric;
   /*! \brief Vector with gene segments. */ 
   phylogeny *segment;
 	/*! \brief Linked list of topologies. */

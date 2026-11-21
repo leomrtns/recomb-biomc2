@@ -99,10 +99,13 @@ struct node_likelihood_struct
 
 /*! \brief Circular linked list with partial likelihood information for a node. Its size is the largest between 
  * chain_data_struct::n_cycles and chain_data_struct::n_mini. */
+/* A contiguous row per site pattern: four conditional likelihoods and their log scale. */
+typedef double site_partial[5];
+
 struct lk_vector_struct
 {
   /*! \brief Partial likelihood values for each pattern and state (A,G,C,T). */
-  double **lk;
+  site_partial *lk;
   /*! \brief Double-linked circular list information (lk_vector_struct::next
    * represents proposal, and accept*/
 	lk_vector next, prev;

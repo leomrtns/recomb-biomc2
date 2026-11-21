@@ -1,0 +1,21 @@
+name: Build and test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  conda:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: package-build
+          create-args: >-
+            conda-build
+            -c conda-forge
+      - name: Build package and test installed programs
+        shell: micromamba-shell {0}
+        run: conda build --override-channels -c conda-forge conda

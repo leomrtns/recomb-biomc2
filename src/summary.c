@@ -29,7 +29,6 @@
 
 void read_summary_topol_from_file (summary sm, char *treefile);
 void read_summary_dist_from_file (summary sm, char *distfile);
-void remove_unused_memory_from_summary (summary sm);
 void remove_duplicate_trees_from_summary (summary sm);
 void remove_duplicate_segments_from_summary (summary sm);
 void remove_duplicate_samples_from_summary (summary sm);
@@ -78,7 +77,7 @@ read_summary_topol_from_file (summary sm, char *treefile)
   order_nexus_treespace_id (nex, label_order);
 
   for (i=0; i < nex->nleaves; i++) {
-    sm->taxlabel[i] = (char*) biomc2_malloc (sizeof (char) * strlen(nex->taxlabel[i]));
+    sm->taxlabel[i] = (char*) biomc2_malloc (strlen (nex->taxlabel[i]) + 1);
     strcpy (sm->taxlabel[i], nex->taxlabel[i]);
   }
 
@@ -105,8 +104,12 @@ read_summary_dist_from_file (summary sm, char *distfile)
   if (sscanf (line_read, "Nseg %d Nsamples %d", &(sm->n_segments), &(sm->n_samples_original)) != 2)
     biomc2_error ( "malformed post.dist file (first line should be 'Nseg # Nsamples #')\n");
 
-/* sometimes user asks X iter but program outputs (X+1) - rounding error; and program later will remove unused anyhow... */
-  sm->n_samples_original++; 
+  char name[32];
+  const char *key = strstr (line_read, "Metric ");
+  strcpy (sm->metric, "dspr");
+  if (key && sscanf (key, "Metric %31s", name) == 1)
+    strcpy (sm->metric, !strcmp (name, "binary") ? "binary" : tree_metric_name (parse_tree_metric (name)));
+
 
   sm->breakpoint = (int*) biomc2_malloc (sm->n_segments * sizeof (int));
   sm->coldspot   = (int*) biomc2_malloc (sm->n_segments * sizeof (int));
@@ -118,9 +121,16 @@ read_summary_dist_from_file (summary sm, char *distfile)
   for (i=0; i < sm->n_segments; i++) {
     if (sscanf (first_char, "%d ",&(sm->breakpoint[i])) != 1) 
       biomc2_error ("could not read potential breakpoint (# %d) location (second line of post.dist file)\n", i+1);
-    first_char = strstr (first_char, " "); first_char++; 
+    if (i+1 < sm->n_segments) first_char = strchr (first_char, ' ') + 1;
   }
   sm->n_sites = sm->breakpoint[sm->n_segments-1];
+
+  /* Historical traces can have more samples than advertised after integer thinning. */
+  fpos_t first_sample;
+  if (fgetpos (file, &first_sample)) biomc2_error ("cannot locate first posterior sample");
+  sm->n_samples_original = 0;
+  while (biomc2_getline (&line_read, &linelength, file) != -1) sm->n_samples_original++;
+  if (!sm->n_samples_original || fsetpos (file, &first_sample)) biomc2_error ("cannot read posterior samples");
 
   sm->LnL = (double*) biomc2_malloc (sm->n_samples_original * sizeof (double));
   sm->prior_rate  = (double*) biomc2_malloc (sm->n_samples_original * sizeof (double));
@@ -146,16 +156,21 @@ read_summary_dist_from_file (summary sm, char *distfile)
 
   sm->n_samples = 0;
   while (biomc2_getline (&line_read, &linelength, file) != -1) {
+    if (sm->n_samples >= sm->n_samples_original) biomc2_error ("posterior trace grew during reading");
     if (sscanf (line_read, "%d %lf %d %d %lf %lf ", &i1, &(sm->LnL[sm->n_samples]), &(sm->nSPR[sm->n_samples]), 
                 &(sm->nCOP[sm->n_samples]), &(sm->prior_rate[sm->n_samples]), &(sm->prior_kappa[sm->n_samples])) != 6) 
       biomc2_error ("could not read initial info for sample on line %d of post.dist file\n", i+3);
     prev = 0;
     first_char = line_read;
     for (j=0; j < sm->nCOP[sm->n_samples]; j++) {
-      first_char = strstr (first_char, "|"); first_char++;
+      first_char = strchr (first_char, '|');
+      if (!first_char) biomc2_error ("missing breakpoint on sample %d", sm->n_samples + 1);
+      first_char++;
       if (sscanf (first_char, " %d %d ",&i1, &i2) != 2) /* i1 refers to the breakpoint and i2 is the SPR distance */ 
         biomc2_error ("could not read breakpoint (# %d) info for sample on line %d of post.dist file\n", j+1, 
                       sm->n_samples+3);
+      if (counter >= sm->n_index || i1 < prev || i1 >= sm->n_segments-1 || i2 < 1)
+        biomc2_error ("inconsistent tree and distance files at sample %d", sm->n_samples + 1);
       for (k = prev; k <i1; k++) { 
         sm->topol[k][sm->n_samples] = sm->t_index[counter];
         sm->dSPR[k][sm->n_samples]  = 0;
@@ -165,6 +180,7 @@ read_summary_dist_from_file (summary sm, char *distfile)
       prev = i1+1;
       counter++;
     }
+    if (counter >= sm->n_index) biomc2_error ("missing tree at sample %d", sm->n_samples + 1);
     for (k = prev; k <sm->n_segments-1; k++) { 
       sm->topol[k][sm->n_samples] = sm->t_index[counter];
       sm->dSPR[k][sm->n_samples]  = 0;
@@ -174,7 +190,7 @@ read_summary_dist_from_file (summary sm, char *distfile)
     sm->n_samples++;
   }
   if (!sm->n_samples) biomc2_error ("No posterior samples yet");
-  else if (sm->n_samples < sm->n_samples_original) remove_unused_memory_from_summary (sm);
+  if (sm->n_samples != sm->n_samples_original) biomc2_error ("posterior trace changed during reading");
 
   fclose (file);
   if (line_read) free (line_read);
@@ -231,31 +247,6 @@ del_summary (summary sm)
   }
 
   free (sm);
-}
-
-void
-remove_unused_memory_from_summary (summary sm)
-{
-  int i;
-
-  sm->n_samples_original = sm->n_samples;
-
-  sm->LnL = (double*) biomc2_realloc ((double*)sm->LnL, sm->n_samples_original * sizeof (double));
-  sm->prior_rate  = (double*) biomc2_realloc ((double*) sm->prior_rate, sm->n_samples_original * sizeof (double));
-  sm->prior_kappa = (double*) biomc2_realloc ((double*) sm->prior_kappa, sm->n_samples_original * sizeof (double));
-  sm->nSPR = (int*) biomc2_realloc ((int*) sm->nSPR, sm->n_samples_original * sizeof (int));
-  sm->nCOP = (int*) biomc2_realloc ((int*) sm->nCOP, sm->n_samples_original * sizeof (int));
-
-  for (i=0; i < sm->n_segments-1; i++) {
-    sm->dSPR[i]  = (int*) biomc2_realloc ((int*) sm->dSPR[i],  sm->n_samples_original * sizeof (int));
-    sm->topol[i] = (int*) biomc2_realloc ((int*) sm->topol[i], sm->n_samples_original * sizeof (int));
-  }
-  sm->topol[i] = (int*) biomc2_realloc ((int*) sm->topol[i], sm->n_samples_original * sizeof (int));
-
-  sm->w_sample  = (int*) biomc2_realloc ((int*) sm->w_sample, sm->n_samples_original * sizeof (int));
-  for (i=0; i < sm->n_samples_original; i++) sm->w_sample[i] = 1;
-  sm->sample_index  = (int*) biomc2_realloc ((int*) sm->sample_index, sm->n_samples_original * sizeof (int));
-  for (i=0; i < sm->n_samples_original; i++) sm->sample_index[i] = i;
 }
 
 void
@@ -349,7 +340,7 @@ remove_duplicate_segments_from_summary (summary sm)
     sm->w_segment  = (int*) biomc2_realloc ((int*) sm->w_segment,  sm->n_segments * sizeof (int));
     sm->coldspot   = (int*) biomc2_realloc ((int*) sm->coldspot,   sm->n_coldspot * sizeof (int));
     for (i = n_segments_original - 2; i > sm->n_segments - 2; i--) if (sm->dSPR[i]) free (sm->dSPR[i]);
-    sm->dSPR = (int**) biomc2_realloc ((int**) sm->dSPR, (sm->n_segments-1) * sizeof (int*));
+    if (sm->n_segments > 1) sm->dSPR = biomc2_realloc (sm->dSPR, (sm->n_segments-1) * sizeof (int*));
     for (i = n_segments_original - 1; i > sm->n_segments - 1; i--) if (sm->topol[i]) free (sm->topol[i]);
     sm->topol = (int**) biomc2_realloc ((int**) sm->topol, sm->n_segments * sizeof (int*));
 
@@ -372,7 +363,8 @@ remove_duplicate_samples_from_summary (summary sm)
   for (i=0; i < sm->n_samples - 1; i++) {
     for (j=i+1; j < sm->n_samples; j++) {
       for (equal=true, k=0; (equal == true) && (k < sm->n_segments); k++)
-        if (sm->topol[k][i] != sm->topol[k][j]) equal = false;
+        if (sm->topol[k][i] != sm->topol[k][j] ||
+            (k+1 < sm->n_segments && sm->dSPR[k][i] != sm->dSPR[k][j])) equal = false;
 
       if (equal == true) { /* samples i and j are identical */
         sm->n_samples--;

@@ -65,7 +65,9 @@ run_sampler (char *filename)
 
   time1 = clock ();
 
-  interval = chain1->ngen/chain1->nsamples;
+  if (chain1->nsamples < 1) biomc2_error ("nsamples must be positive");
+  interval = MAX (1, chain1->ngen/chain1->nsamples);
+  chain1->nsamples = chain1->ngen / interval;
   chain2->nsamples = chain1->nsamples;
 
   print_initial_info (chain1, interval);
@@ -547,7 +549,7 @@ open_output_files (chain_data chain)
 
 
   /* file Header */ 
-  fprintf (chain->distfile, "Nseg %d Nsamples %d \n",chain->n_segments, chain->nsamples);
+  fprintf (chain->distfile, "Nseg %d Nsamples %d Metric %s\n", chain->n_segments, chain->nsamples, chain->max_dist_split ? tree_metric_name (chain->metric) : "binary");
   for (i=0; i<chain->n_segments-1; i++) fprintf (chain->distfile, "%d ", chain->breakpoint[i]);
 	fprintf (chain->distfile, "%d\n", chain->nsites);
 }

@@ -25,7 +25,7 @@ main (int argc, char **argv)
 	random_number = new_biomc2_rng ();
 
   sm = read_summary_from_file (argv[1], argv[2]);
-	plot_post_recomb_freq (sm);
+	write_breakpoint_profile (sm);
 //  calculate_distance_matrix_bp_loc (sm);
   m1 = new_mosaic_from_centroid (sm);
   m2 = new_mosaic_from_quantile (sm, 0.5);
@@ -62,8 +62,8 @@ print_mosaic_tree_frequencies (summary sm, mosaic m1, mosaic m2)
     bp1 = bp2 = 0;
 
     /* below we have bp++ since zero is reserved for _no_ recomb (bp is the tree ID) */
-    if (i == m1->loc_idx[i1]) { bp1 = m1->tree[i1++]->i[0].idx; tfreq[bp1]++; bp1++; }
-    if (i == m2->loc_idx[i2]) { bp2 = m2->tree[i2++]->i[0].idx; tfreq[bp2]++; bp2++; }
+    if (i1 < m1->n && i == m1->loc_idx[i1]) { bp1 = m1->tree[i1++]->i[0].idx; tfreq[bp1]++; bp1++; }
+    if (i2 < m2->n && i == m2->loc_idx[i2]) { bp2 = m2->tree[i2++]->i[0].idx; tfreq[bp2]++; bp2++; }
     tfreq[sm->tree_freq[i]->i[0].idx]++;
 
     /* it might be only one posterior topology */

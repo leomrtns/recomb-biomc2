@@ -3,7 +3,7 @@
 int
 main (int argc, char **argv)
 {
-	clock_t time0, time1, time2;
+	clock_t time0, time1, time2 = 0;
 	struct tms times_buf;
 	nexus_treespace treespace;
 	split_space split;
@@ -43,6 +43,7 @@ main (int argc, char **argv)
 		success = spr_apply_multiple_moves (t1, recomb);
 
     if (success) {
+      count++;
 			time1 = times (&times_buf);
 			setup_split_store_recomb_info (split);
 			spr1 = dSPR_topology_l (t2, t1, split, &(split->inodes));

@@ -100,7 +100,7 @@ struct biomc2_rng_struct
 };
 
 /*! \brief Random number pointer (should be available to all modules) */ 
-biomc2_rng random_number;
+extern biomc2_rng random_number;
 
 /*! \brief Returns a random number between 0 and 1 (inclusive). */
 double biomc2_rng_uniform (biomc2_rng r);

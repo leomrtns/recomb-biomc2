@@ -80,7 +80,7 @@ double read_branch_length (char *right_string_ptr);
 int find_branch_split_newick (char *left_string_ptr, char *right_string_ptr);
 
 /*! \brief Recursive function that prints node info to string in top-bottom order. */
-void nexus_subtree_to_string (char *str, const nexus_node node, const bool has_branches);
+static char *nexus_subtree_to_string (char *str, const nexus_node node, const bool has_branches);
 
 nexus_tree
 new_nexus_tree (int nleaves) 
@@ -687,49 +687,32 @@ number_of_leaves_in_newick (char **string)
 }
 
 char *
-nexus_tree_to_string (const nexus_tree tree) 
+nexus_tree_to_string (const nexus_tree tree)
 {
-	int size = 1, i;
-	char *str;
-	/* allocate space for str (overestimate size) */
-	for (i = 0; i < tree->nleaves; i++)
-		size += strlen (tree->leaflist[i]->taxlabel) + 1;
-	size += tree->nnodes * 4;
-	if (tree->has_branches)
-		size += tree->nnodes * 12;
-	
-	str = (char *) biomc2_malloc (sizeof (char) * size);
-  memset (str, 0, sizeof (char) * size);
-  sprintf (str, "(");
-	nexus_subtree_to_string (str, tree->root->left, tree->has_branches);
-	if (tree->has_branches)
-		sprintf (str, "%s,%s: %.8f);", str, tree->root->taxlabel, tree->root->branch_length);
-	else
-		sprintf (str, "%s,%s);", str, tree->root->taxlabel);
-	return str;
+  size_t size = 8 + (size_t)tree->nnodes * (tree->has_branches ? 330 : 4);
+  for (int i=0; i < tree->nleaves; i++) size += strlen (tree->leaflist[i]->taxlabel);
+  char *str = biomc2_malloc (size), *out = str;
+  *out++ = '(';
+  out = nexus_subtree_to_string (out, tree->root->left, tree->has_branches);
+  *out++ = ',';
+  out = nexus_subtree_to_string (out, tree->root, tree->has_branches);
+  strcpy (out, ");");
+  return str;
 }
 
-void
-nexus_subtree_to_string (char *str, const nexus_node node, 
-															const bool has_branches)
+static char *
+nexus_subtree_to_string (char *out, const nexus_node node, const bool has_branches)
 {
-	if (node->taxlabel != NULL) {
-		if (has_branches)
-			sprintf (str, "%s%s: %.8f", str, node->taxlabel, node->branch_length);
-		else
-			sprintf (str, "%s%s", str, node->taxlabel);
-	}
-	else
-	 { /* internal node */
-	 	sprintf (str, "%s(", str);
-		nexus_subtree_to_string (str, node->left, has_branches);
-		sprintf (str, "%s,", str);
-		nexus_subtree_to_string (str, node->right, has_branches);
-		if (has_branches)
-			sprintf (str, "%s): %.8f", str, node->branch_length);
-		else
-			sprintf (str, "%s)", str);
-	 }
+  if (node->taxlabel) out += sprintf (out, "%s", node->taxlabel);
+  else {
+    *out++ = '(';
+    out = nexus_subtree_to_string (out, node->left, has_branches);
+    *out++ = ',';
+    out = nexus_subtree_to_string (out, node->right, has_branches);
+    *out++ = ')';
+  }
+  if (has_branches) out += sprintf (out, ": %.8f", node->branch_length);
+  return out;
 }
 
 void

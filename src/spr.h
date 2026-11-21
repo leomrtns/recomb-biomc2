@@ -41,7 +41,7 @@ bool spr_apply_multiple_moves (topology p, int n_moves);
 
 /*! \brief Apply one branch swapping, which may be spr_apply_random_move_spr()
  * or spr_apply_random_move_nni() according to run_sampler.c */
-void (*branch_swap) (topology p, bool done);
+extern void (*branch_swap) (topology p, bool done);
 
 /*! \brief Apply SPR operation restricted to internal nodes (unused). */
 void spr_apply_random_move_internal (topology p, bool done);

@@ -24,6 +24,8 @@
 
 #include "chain_data.h"
 
+char *acceptance_names[AFREQSIZE], *a_names[AFREQSIZE];
+
 /* local function prototypes */
 
 void read_biomc_file (char *filename, chain_data chain);
@@ -62,6 +64,7 @@ new_chain_data_from_file (char *filename)
   chain->hp_penalty_beta   = 1.;
   chain->hp_rate           = 1.;
   chain->hp_kappa          = 1.;
+  chain->metric = METRIC_DSPR;
   chain->max_distance      = -1;
 	chain->ratio_spr         = 5;
 	chain->ratio_topol_update = 1;
@@ -103,17 +106,12 @@ new_chain_data_from_file (char *filename)
     biomc2_error ( 
 					 "ntax disagree between sequence and tree files\n");
   }
-	if (a->ntax > MaxLeaves) {
-    del_nexus_alignment (a);
-    del_nexus_treespace (t);
-    biomc2_error ( 
-					 "number of leaves > %d, cannot calculate tree distance\n", MaxLeaves);
-  }
 
   chain->nsites = a->nchar;
   chain->ntax = a->ntax;
   chain->taxlabel = a->taxlabel; 
 	chain->split = new_split_space (t->nleaves);
+  chain->split->metric = chain->metric;
 
 	if (chain->ratio_spr < 1)    chain->ratio_spr    = 2 * chain->ngen;
 	if (chain->ratio_topol_update < 1) chain->ratio_topol_update = 0;
@@ -146,7 +144,8 @@ new_chain_data_from_file (char *filename)
 	if (chain->n_mini < 1)   chain->n_mini = 1;
 	if (chain->n_mini > 1e4) chain->n_mini = 1e4;
 
-	if(chain->max_distance > chain->split->inodes) chain->max_distance = chain->split->inodes;
+	if (chain->max_distance < 0) chain->max_distance = chain->split->inodes;
+  if (chain->metric == METRIC_DSPR && chain->max_distance > chain->split->inodes) chain->max_distance = chain->split->inodes;
 	
 	if (chain->max_distance < 1) { chain->max_distance   = 1; chain->max_dist_split = 0; }
 	else chain->max_dist_split = chain->max_distance; 
@@ -309,53 +308,47 @@ initialize_poisson_chain_data (chain_data chain)
 	}
 
   chain->factorial =
-  (double*) biomc2_malloc ((chain->ntax) * sizeof (double));
+  (double*) biomc2_malloc (((size_t)chain->max_distance + 1) * sizeof (double));
 
   chain->factorial[0] = chain->factorial[1] = 0.;
-  for (i=2; i < chain->ntax; i++) chain->factorial[i] = chain->factorial[i-1] + log ((double)(i));
+  for (i=2; i <= chain->max_distance; i++) chain->factorial[i] = chain->factorial[i-1] + log ((double)(i));
 }
 
 void
 store_chain_data_site_pattern (chain_data chain, nexus_alignment a)
 {
-  bool equal;
-  int s1, s2, seq, lastsite = a->nchar;
-	int chunked_gain, index[a->nchar];
+  size_t capacity = 1;
+  while (capacity < 2 * (size_t)a->nchar) capacity *= 2;
+  int *table = biomc2_malloc (capacity * sizeof *table);
+  for (size_t i=0; i < capacity; i++) table[i] = -1;
 
-	for (s1=0; s1 < lastsite; s1++) index[s1] = s1;
-	
-	for (s1 = 0; s1 < lastsite - 1; s1++) {
-		for (s2 = s1 + 1; s2 < lastsite; s2++) {
-  
-			for (equal = true, seq = 0; (equal == true) && (seq < a->ntax); seq++)
-        if (a->character[seq][s1] != a->character[seq][s2]) equal = false;
-
-			/* s1 and s2 have identical patterns */
-      if (equal == true) {
-				chain->site_pattern[index[s2]] = s1;
-				lastsite--;
-				if (s2 < lastsite) {
-					for (seq = 0; seq < a->ntax; seq++)
-						a->character[seq][s2] = a->character[seq][lastsite];
-					index[s2] = index[lastsite];
-				}
-				s2--;/* compare again, since character[][s2] now contains last site */
-			}// if (equalpattern)
-		}// for (s2)
-		chain->site_pattern[index[s1]] = s1;
-	}// for (s1)
-	chain->site_pattern[index[s1]] = s1;
-	
-	chunked_gain = a->nchar - lastsite;
-	
-	if (chunked_gain > 0) {
-		a->nchar -= chunked_gain;
-		for (seq = 0; seq < a->ntax; seq++) {
-			a->character[seq] =
-			(char *) biomc2_realloc ((char*) a->character[seq], (a->nchar + 1) * sizeof (char));
-			a->character[seq][a->nchar] = '\0';
-		}
-	}
+  /* Hash the original columns once; compare actual states on a hash collision.
+   * Compact towards the left so unread sites are never overwritten. */
+  int distinct = 0;
+  for (int site=0; site < a->nchar; site++) {
+    uint64_t hash = UINT64_C(14695981039346656037);
+    for (int taxon=0; taxon < a->ntax; taxon++)
+      hash = (hash ^ (unsigned char)a->character[taxon][site]) * UINT64_C(1099511628211);
+    size_t slot = hash & (capacity - 1);
+    while (table[slot] >= 0) {
+      int taxon = 0;
+      while (taxon < a->ntax && a->character[taxon][site] == a->character[taxon][table[slot]]) taxon++;
+      if (taxon == a->ntax) break;
+      slot = (slot + 1) & (capacity - 1);
+    }
+    if (table[slot] < 0) {
+      table[slot] = distinct++;
+      for (int taxon=0; taxon < a->ntax; taxon++)
+        a->character[taxon][table[slot]] = a->character[taxon][site];
+    }
+    chain->site_pattern[site] = table[slot];
+  }
+  free (table);
+  a->nchar = distinct;
+  for (int taxon=0; taxon < a->ntax; taxon++) {
+    a->character[taxon] = biomc2_realloc (a->character[taxon], (size_t)distinct + 1);
+    a->character[taxon][distinct] = '\0';
+  }
 }
 
 
@@ -462,7 +455,13 @@ read_biomc_file (char *filename, chain_data chain)
           biomc2_error ( "could not read KAPPA information (it should be a single float or integer number)\n");
 			}
 
-			else if (strcasestr (line, "DISTANCE") && (needle_tip = strcasestr (line, "="))) {
+			else if (strcasestr (line, "METRIC") && (needle_tip = strchr (line, '='))) {
+        char name[32], trailing;
+        if (sscanf (needle_tip + 1, " %31s %c", name, &trailing) != 1)
+          biomc2_error ("expected metric = dspr, rf or hdist");
+        chain->metric = parse_tree_metric (name);
+      }
+      else if (strcasestr (line, "DISTANCE") && (needle_tip = strcasestr (line, "="))) {
 				needle_tip++; // gamma (a,b) -> E[x] = a/b 
         if ((sscanf (needle_tip, " %lf %lf ", &(chain->hp_lambda_alpha), &(chain->hp_lambda_beta))) != 2)	
           biomc2_error ( "could not read DISTANCE information (it should be _two_ float or integer numbers, one for alpha and one for beta)\n");
@@ -470,13 +469,13 @@ read_biomc_file (char *filename, chain_data chain)
 
 			else if (strcasestr (line, "TREEFILE") && (needle_tip = strcasestr (line, "="))) {
 				needle_tip++;
-        if ((sscanf (needle_tip, " %s ", chain->tree_filename)) != 1)	
+        if ((sscanf (needle_tip, " %511s ", chain->tree_filename)) != 1)
 					biomc2_error ( "could not read TREEFILE information (it should be a single file name without spaces or non-standard characters)\n");
 			}
 
 			else if (strcasestr (line, "SEQFILE") && (needle_tip = strcasestr (line, "="))) {
 				needle_tip++;
-				if ((sscanf (needle_tip, " %s ", chain->seq_filename)) != 1)	
+				if ((sscanf (needle_tip, " %511s ", chain->seq_filename)) != 1)
 					biomc2_error ( "could not read SEQFILE information (it should be a single file name without spaces or non-standard characters)\n");
 			}
 
@@ -512,8 +511,10 @@ read_biomc_file (char *filename, chain_data chain)
 
 			else if (strcasestr (line, "PRIOR") && (needle_tip = strcasestr (line, "="))) {
 				needle_tip++;
-				if ((sscanf (needle_tip, " %d ", (int*)&(chain->prior))) != 1)	
+				int prior;
+        if (sscanf (needle_tip, " %d ", &prior) != 1 || (prior != 0 && prior != 1))
 					biomc2_error ( "could not read PRIOR information (it should be a single, integer number)\n");
+        chain->prior = prior;
 			}
 
 			else if (strcasestr (line, "UPDATE") && (needle_tip = strcasestr (line, "="))) {

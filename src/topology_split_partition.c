@@ -1,515 +1,407 @@
-/* Copyright (C) 2006  Leonardo de Oliveira Martins
- * 
- * leo at lbm ab a u-tokyo ac jp 
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the 
- * Free Software Foundation, Inc., 51 Franklin Street, 
- * Fifth Floor, Boston, MA  02110-1301, USA.
- */
-
-/*! \file topology_split_partition.c
- *  \ingroup topology 
- *  \brief split_partition_struct (edge bipartition) calculation.
- */
-
-#include "topology.h"
-
-/*! \brief Replace information of redundant leaf by information of largest leaf
- * for split_space_struct. */
-void split_space_replace_bit (int *to, int *from, split_space split);
-
-/*! \brief Replace information of redundant leaf by information of largest leaf
- * for one element of split_space_struct. */
-void split_bipartition_replace_bit (split_partition *u, int *from, long long int *masktrue, long long int *maskfalse);
-
-/*! \brief Maps original leaves to compressed leaves into split_space::leaf_idx . */
-void store_compression_info_real (int *to, int *from, split_space split);
-
-/*! \brief Does nothing (if \f$ d_{SPR} \f$ extension is not used) */
-void store_compression_info_dummy (int *to, int *from, split_space split);
-
-/*! \brief Uses split_space::best_prune and split_space::leaf_idx to store
- * pruned subtree (original leaves) information into split_space::leaf_recomb . */
-void extend_subtree_info_real (int *index, int *idx_n, split_space split);
-
-/*! \brief Does nothing (if \f$ d_{SPR} \f$ extension is not used) */
-void extend_subtree_info_dummy (int *index, int *idx_n, split_space split);
-
-split_space
-new_split_space (int n_leaves)
-{
-	split_space split;
-
-	split = 
-	(split_space) biomc2_malloc (sizeof (struct split_space_struct));
-
-	split->n_leaves = n_leaves;
-	split->inodes = n_leaves - 3;
-	split->n_active = n_leaves;
-  split->dSPR = split->rfdistance = 0;
-
-  /* pointers to topologies bipartitions */
-	split->n_u1 = split->n_u2 = split->inodes;
-	split->u1 = 
-	(split_partition**) biomc2_malloc (split->n_u1 * sizeof (split_partition*));
-	split->u2 = 
-	(split_partition**) biomc2_malloc (split->n_u2 * sizeof (split_partition*));
-
-  /* index of original leaves mapped to compressed leaves */
-	split->leaf_idx =
-	(int*) biomc2_malloc (split->n_active * sizeof (int));
-	/* leaves involved in recombination */
-	split->leaf_recomb =
-	(int*) biomc2_malloc (split->n_active * sizeof (int));
-
-  /* list of agreement edges (equal splits on both topologies) */
-	split->n_agree = 0;
-	split->agree =
-  (split_partition**) biomc2_malloc (split->inodes * sizeof (split_partition*));
-
-  /* list of disagreement edges */
-  split->n_disagree = 0;
-  split->dis1 =
-  (split_partition*) biomc2_malloc (split->inodes * split->inodes * sizeof (split_partition));
-  split->dis2 =
-  (split_partition*) biomc2_malloc (split->inodes * split->inodes * sizeof (split_partition));
-  split->d_ptr =
-  (split_partition**) biomc2_malloc (split->inodes * split->inodes * sizeof (split_partition*));
-
-	/* default is to neither map original leaves nor extend algo to give pruned subtrees */
-	setup_split_dont_store_recomb_info (split);
-	return split;
-}
-
-void
-initialize_split_space_l (split_space split)
-{
-	int i;
-
-	split->n_active = split->n_leaves;
-	split->n_agree = split->n_disagree = 0;
-	split->n_u1 = split->n_u2 = split->inodes;
-	split->dSPR = split->rfdistance = 0;
-  split->active_l = 0LL;
-
-  for (i=0; i < split->n_active; i++) { 
-		split->active_l |= (1LL << i); 
-	}
-}
-
-void
-setup_split_store_recomb_info (split_space split)
-{
-	int i;
-	for (i=0; i < split->n_leaves; i++) { 
-		split->leaf_idx[i] = i;
-		split->leaf_recomb[i] = 0;
-	}
-	split->extend_subtree_info = &extend_subtree_info_real;
-	split->store_compression_info = &store_compression_info_real;
-}
-
-void
-setup_split_dont_store_recomb_info (split_space split)
-{
-	split->extend_subtree_info = &extend_subtree_info_dummy;
-	split->store_compression_info = &store_compression_info_dummy;
-}
-
-void
-del_split_space (split_space split)
-{
-	if (split) {
-		if (split->dis2)  free (split->dis2);
-		if (split->dis1)  free (split->dis1);
-		if (split->u2)    free (split->u2);
-		if (split->u1)    free (split->u1);
-		if (split->d_ptr) free (split->d_ptr);
-		if (split->agree) free (split->agree);
-		if (split->leaf_idx)    free (split->leaf_idx);
-		if (split->leaf_recomb) free (split->leaf_recomb);
-		free (split);
-	}
-}
-
-void
-split_initialize_l (split_partition *bpt, int label_id)
-{
-  bpt->l = (1LL << label_id);
-  bpt->n = 1;
-}
-
-void 
-split_OR_l (split_partition *res, const split_partition *b1, const split_partition *b2)
-{
-  res->l = b1->l | b2->l;
-  res->n = b1->n + b2->n;
-}
-
-void
-split_minimize_initial_subtree_size_l (split_partition **u, int *n, split_space split)
-{
-  int i, k;
-  long long int smss_up;
-
-  for (i=0; i < *n; i++) { 
-		smss_up = ~u[i]->l;
-		k = split->n_active - u[i]->n;
-
-    /* smaller subtree */
-    if (k < u[i]->n) { u[i]->n = k; u[i]->l = smss_up; }
-		/* break ties by subtree not including root (id = 0)  */
-    else if ( (k == u[i]->n) && (u[i]->l & 1LL) ) { u[i]->n = k; u[i]->l = smss_up; }
-  }
-}
-
-void
-split_minimize_subtree_size_l (split_partition **u, int *n, split_space split)
-{
-  int i, k;
-  long long int smss_up;
-
-  for (i=0; i < *n; i++) { 
-    smss_up = split->active_l & ~u[i]->l;
-    u[i]->l = split->active_l &  u[i]->l;
-
-    split_bipartition_size_l (&(u[i]->n), &(u[i]->l), split);
-		if (u[i]->n > 1) k = split->n_active - u[i]->n;
-		else k = 0;
-
-    /* smaller subtree */
-    if ((k < u[i]->n) && (k > 1)) { u[i]->n = k; u[i]->l = smss_up; }
-    /* break ties by subtree that excludes root leaf */
-    else if ( (k == u[i]->n) && (k > 1) && (u[i]->l & 1LL) ) { u[i]->n = k; u[i]->l = smss_up; }
-    else if ((u[i]->n <= 1) || (k <= 1)) { u[i--] = u[--(*n)]; }
-  }
-}
-
-void
-split_create_agreement_list_l (split_space split)
-{
-	int i, j;
-
-	for (i=0; i < split->n_u1; i++) 
-		for (j=0; (j < split->n_u2); j++) {
-			if (split->u1[i]->n == split->u2[j]->n) {
-				if (split->u1[i]->l == split->u2[j]->l) {
-					split->agree[split->n_agree++] = split->u1[i];
-					split->u1[i] = split->u1[--split->n_u1];
-					split->u2[j] = split->u2[--split->n_u2];
-					i--; j = split->n_u2;
-				}
-			}
-		}
-	
-}
-
-void
-split_create_agreement_list_mapping (split_space split)
-{
-	int i, j;
-
-	for (i=0; i < split->n_u1; i++) 
-		for (j=0; (j < split->n_u2); j++) {
-			if (split->u1[i]->n == split->u2[j]->n) {
-				if (split->u1[i]->l == split->u2[j]->l) {
-					split->u1[i]->node->map_id = split->u2[j]->node->id;
-					split->u2[j]->node->map_id = split->u1[i]->node->id;
-					split->agree[split->n_agree++] = split->u1[i];
-					split->u1[i] = split->u1[--split->n_u1];
-					split->u2[j] = split->u2[--split->n_u2];
-					i--; j = split->n_u2;
-				}
-			}
-		}
-	/* don't have a match but the ID is the same (no swap necessary) */
-	for (i=0; i < split->n_u1; i++) 
-		for (j=0; (j < split->n_u2); j++) {
-			if (split->u1[i]->node->id == split->u2[j]->node->id) {
-				split->u1[i]->node->map_id = split->u2[j]->node->id;
-				split->u2[j]->node->map_id = split->u1[i]->node->id;
-				split->u1[i] = split->u1[--split->n_u1];
-				split->u2[j] = split->u2[--split->n_u2];
-				i--; j = split->n_u2;
-			}
-		} 
-	if (split->n_u1 != split->n_u2) biomc2_error ( "problem matching IDs between t1 and t2");
-	/* don't have a match nor same ID */
-	for (i=0; i < split->n_u1; i++) {
-		split->u1[i]->node->map_id = split->u2[i]->node->id;
-		split->u2[i]->node->map_id = split->u1[i]->node->id;
-	}
-}
-
-void
-split_remove_agreement_edges_l (split_partition **u, int *n, split_space split)
-{
-  int i, j;
-
-	for (i=0; (i < (*n)); i++) 
-		for (j=0; j < split->n_agree; j++)
-			if (u[i]->n == split->agree[j]->n) {
-				if (u[i]->l == split->agree[j]->l) { u[i--] = u[--(*n)]; j = split->n_agree; }
-			}
-}
-
-void
-split_compress_subtree_agreement_topol (split_space split)
-{
-	int i, j, k, leafpair[2];
-
-	for (i=0; i < split->n_agree; i++) if (split->agree[i]->n == 2) {
-		k = 0;
-		for (j=0; j < split->n_active; j++) if ( ((split->agree[i]->l >> j) & 1LL) ) leafpair[k++] = j;
-		if (leafpair[0]) { /* root not included */
-			if ((split->agree[i]->node->left->d_done) && (split->agree[i]->node->right->d_done)) 
-				split->agree[i]->node->d_done = true;
-		}
-		else { /* root belongs to agreement */
-			if ((split->agree[i]->node->up->u_done) && (split->agree[i]->node->sister->d_done)) 
-				split->agree[i]->node->u_done = true;
-		}
-
-		// collapse info of leaves pair[0] and pair[1] into new leaf at position pair[0]
-		split_space_replace_bit (&(leafpair[0]), &(leafpair[1]), split);
-		
-		// since position pair[1] is now redundant, reduce bipartition space
-		split->n_active--; split->active_l = 0LL;
-		for (i=0; i < split->n_active; i++) split->active_l |= (1LL << i);
-		if (leafpair[1] < split->n_active) 
-			split_space_replace_bit (&(leafpair[1]), &(split->n_active), split);
-
-		// recalculate sizes
-		split_minimize_subtree_size_l (split->agree, &(split->n_agree), split);
-		i = -1; 
-	}
-}
-
-void
-split_compress_subtree_agreement_l (split_space split)
-{
-	int i, j, k, leafpair[2];
-
-	for (i=0; i < split->n_agree; i++) if (split->agree[i]->n == 2) {
-		k = 0;
-		for (j=0; j < split->n_active; j++) if ( ((split->agree[i]->l >> j) & 1LL) ) leafpair[k++] = j;
-
-		// collapse info of leaves pair[0] and pair[1] into new leaf at position pair[0]
-		split_space_replace_bit (&(leafpair[0]), &(leafpair[1]), split); /* 2013.03: I think this is redundant -- they already have same info */
-		
-		// since position pair[1] is now redundant, reduce bipartition space
-		split->n_active--; split->active_l = 0LL;
-		for (i=0; i < split->n_active; i++) split->active_l |= (1LL << i);
-		if (leafpair[1] < split->n_active) 
-			split_space_replace_bit (&(leafpair[1]), &(split->n_active), split);
-
-		// recalculate sizes
-		split_minimize_subtree_size_l (split->agree, &(split->n_agree), split);
-		i = -1; 
-	}
-
-}
-
-void
-split_create_disagreement_list_l (split_space split)
-{
-	int i, j, k = split->n_u2;
-
-	split->n_disagree = 0;
-	for (i=0; (i < split->n_u1) && (k); i++) {
-		for (j=0; (j < k); j++) {
-			
-			split->dis1[split->n_disagree].l = split->active_l & (split->u1[i]->l ^ split->u2[j]->l); 
-			split_bipartition_size_l (&(split->dis1[split->n_disagree].n), &(split->dis1[split->n_disagree].l), split);
-
-/*			if (split->dis1[split->n_disagree].n == 1) {
-				split->d_ptr[0] = &(split->dis1[split->n_disagree]);
-				split->n_disagree = 1;
-				return;
-			}
-*/
-			split->dis2[split->n_disagree].l = split->active_l & (split->u1[i]->l ^ ~split->u2[j]->l); 
-			split->dis2[split->n_disagree].n = split->n_active - split->dis1[split->n_disagree].n;
 /*
-			if (split->dis2[split->n_disagree].n == 1) {
-				split->d_ptr[0] = &(split->dis2[split->n_disagree]);
-				split->n_disagree = 1;
-				return;
-			}
-*/
-			if (split->dis1[split->n_disagree].n > split->dis2[split->n_disagree].n) {
-				split->d_ptr[split->n_disagree]  = &(split->dis2[split->n_disagree]);
-			}
-			else {
-				split->d_ptr[split->n_disagree]  = &(split->dis1[split->n_disagree]);
-			}
+ * This file is part of guenomu, a hierarchical Bayesian procedure to estimate the distribution of species trees based
+ * on multi-gene families data.
+ * Copyright (C) 2009  Leonardo de Oliveira Martins [ leomrtns at gmail.com;  http://www.leomartins.org ]
+ *
+ * Guenomu is free software; you can redistribute it and/or modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either version 2 of the License, or (at your option) any later
+ * version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+ * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+ * details (file "COPYING" or http://www.gnu.org/copyleft/gpl.html).
+ */
 
-			if (split->d_ptr[split->n_disagree]->n <= split->n_active/2) split->n_disagree++;
-		}
-	}
-}
+#include "topology_splitset.h"
 
-void
-split_remove_duplicate_disagreement_l (split_space split)
+/*! \brief function used by qsort for a vector of bipartitions (from smaller to larger) */
+int compare_splitset_bipartition_increasing (const void *a1, const void *a2);
+/*! \brief function used by qsort for a vector of bipartitions (from larger to smaller) */
+int compare_splitset_bipartition_decreasing (const void *a1, const void *a2);
+/*! \brief copies bipartion information of internal nodes to splitset, "unroots" the bipartitions and order the resulting vectors */
+int rf_hdist_topology_lowlevel (splitset split, bool exit_at_rf);
+int dSPR_topology_lowlevel (splitset split);
+/*! \brief vector with pointers to bipartitions that are identical on both trees */
+void split_create_agreement_list (splitset split);
+void split_remove_agree_edges (splitset split, bipartition *b, int *nb);
+void split_remove_duplicates (bipartition *b, int *nb);
+void split_compress_agreement (splitset split);
+void split_create_disagreement_list (splitset split);
+void split_disagreement_assign_match (splitset split);
+void split_find_small_disagreement (splitset split);
+void split_remove_small_disagreement (splitset split);
+void split_minimize_subtrees (splitset split);
+void split_remove_redundant_bit (splitset split, int id);
+void split_replace_bit (splitset split, int to, int from);
+void split_new_size (splitset split, int size, bool update_bipartitions);
+void split_swap_position (bipartition *b, int i1, int i2);
+
+splitset
+new_splitset (int nleaves)
 {
-	int i,j;
+  splitset split;
+  int i;
 
-	for (i = split->n_disagree - 1; i >= 1; i--) 
-		if (split->d_ptr[i]->l == split->d_ptr[i-1]->l) {
-			for (j = i; j < split->n_disagree-1; j++) split->d_ptr[j] = split->d_ptr[j+1];
-			split->n_disagree--;
-		}
+  split = (splitset) biomc2_malloc (sizeof (struct splitset_struct));
+  split->size = nleaves - 1;
+  split->disagree = split->agree = NULL; /* used only when calculating dSPR */
+  split->n_agree = split->n_disagree = 0;
+  split->leaf_idx = split->leaf_recomb = NULL;
+  split->prune = NULL;
+  split->h = NULL; /* hungarian method for bipartite matching; unused unless for tree distance */
+  split->match = false;
+  split->spr = split->spr_extra = split->rf = split->hdist = split->hdist_reduced = 0;
+
+  split->g_split = (bipartition*) biomc2_malloc (split->size * sizeof (bipartition));
+  split->s_split = (bipartition*) biomc2_malloc (split->size * sizeof (bipartition));
+  split->g_split[0] = new_bipartition (nleaves);
+  split->s_split[0] = new_bipartition (nleaves);
+  for (i = 1; i < split->size; i++) {
+    split->g_split[i] = new_bipartition_from_bipsize (split->g_split[0]->n); /* use same bipsize */
+    split->s_split[i] = new_bipartition_from_bipsize (split->s_split[0]->n);
+  }
+  split->n_g = split->n_s = 0; /* number of elements actively in use */
+
+  return split;
 }
 
-void
-split_find_smallest_disagreement_subtree_l (split_space split)
-{
-	int i, j;
-	long long int dis;
-
-	split->best_prune = split->d_ptr[0];
-	
-	for (i=0; i < split->n_disagree; i++) {
-		for (j=0; j < split->n_agree; j++) {
-			if ((split->d_ptr[i]->n == split->agree[j]->n) || (split->d_ptr[i]->n == (split->n_active - split->agree[j]->n))) {
-				dis = ( split->active_l & (split->d_ptr[i]->l ^ split->agree[j]->l) );
-				if (!dis) { split->best_prune = split->d_ptr[i]; return; }
-				dis = ( split->active_l & (split->d_ptr[i]->l ^ ~split->agree[j]->l) );
-				if (!dis) { 
-					split->d_ptr[i]->l = split->active_l & ~split->d_ptr[i]->l;
-					split->d_ptr[i]->n = split->n_active - split->d_ptr[i]->n;
-					split->best_prune = split->d_ptr[i]; return; }
-			}
-		}
-	}
-	/* only if there is no match */
-//	if (split->best_prune->n > 2) split_minimize_disagreement_l (split);
-}
-
-// UNUSED
-void
-split_minimize_disagreement_l (split_space split)
-{
-	int i, size, best_size;
-	long long int dis, best_dis;
-
-	best_size = split->best_prune->n; best_dis = split->best_prune->l; 
-	for (i=0; (i < split->n_agree) && (best_size > 1) ; i++) if (split->agree[i]->n <= split->best_prune->n) {
-		dis = ( split->active_l & (split->agree[i]->l ^ split->best_prune->l) );
-		split_bipartition_size_l (&size, &dis, split);
-		
-		if (size < best_size) { best_size = size; best_dis  = dis; }
-	}
-	split->best_prune->l = best_dis;
-	split->best_prune->n = best_size;
-}
-
-void
-split_remove_pruned_subtree_l (split_partition *prune, split_space split)
-{
-	int i, j, index[prune->n], idx_n = 0;
-
-	for (i=0; i < (split->n_active); i++) 
-		if ( ((prune->l >> i) & 1LL) ) index[idx_n++] = i; //at the end, idx_n = prune->n 
-
-//	if (idx_n > 1) qsort (index, idx_n, sizeof (int), compare_int);
-
-	// store recomb subtrees (extension to d_SPR) 
-	split->extend_subtree_info (index, &idx_n, split);
-
-	for (j = prune->n - 1, i = split->n_active - 1, idx_n = 0; i >= (split->n_active - prune->n); i--) {
-		if (index[idx_n] >= (split->n_active - prune->n)) i = -1;
-		else {
-			if ( i == index[j]) j--;
-			else { split_space_replace_bit (&(index[idx_n]), &i, split); idx_n++;}
-		}
-	}
- 
-	split->n_active -= prune->n;
-	split->active_l = 0LL;
-	for (i=0; i < split->n_active; i++) split->active_l |= (1LL << i);
-}
-
-void 
-split_space_replace_bit (int *to, int *from, split_space split)
-{
-	int i;
-	long long int mtru = ( 1LL << *to), mfal = ~mtru;
-
-	// mapping between original leaves and compressed info
-	split->store_compression_info (to, from, split);
-
-	// replace bits 
-	for (i=0; i < split->n_u1; i++) split_bipartition_replace_bit (split->u1[i], from, &mtru, &mfal);
-	for (i=0; i < split->n_u2; i++) split_bipartition_replace_bit (split->u2[i], from, &mtru, &mfal);
-	for (i=0; i < split->n_agree; i++) split_bipartition_replace_bit (split->agree[i], from, &mtru, &mfal);
-}
-
-void
-split_bipartition_replace_bit (split_partition *u, int *from, long long int *masktrue, long long int *maskfalse)
-{
-	// masktrue = 0100 , maskfalse = 1011
-	if ( ((u->l >> *from) & 1LL) ) u->l |= *masktrue;
-	else u->l &= *maskfalse; 
-}
-
-void
-split_print_binary_bipartition_l (const split_partition *u, split_space split)
+splitset
+new_splitset_dSPR (int nleaves)
 {
   int i;
-	for (i=0; i < split->n_active; i++)
-		printf ("%d", (int)((u->l >> i) & 1LL) );
-	printf ("[%d] ", u->n);
+  splitset split = new_splitset (nleaves);
+
+  split->agree    = (bipartition*) biomc2_malloc (split->size * sizeof (bipartition));
+  split->disagree = (bipartition*) biomc2_malloc (split->size * sizeof (bipartition));
+  split->agree[0]    = new_bipartition (nleaves); // this bipsize will be recycled below
+  split->disagree[0] = new_bipartition (nleaves);
+  for (i = 1; i < split->size; i++)               split->agree[i]    = new_bipartition_from_bipsize (split->agree[0]->n);
+  for (i = 1; i < split->size; i++) split->disagree[i] = new_bipartition_from_bipsize (split->disagree[0]->n);
+  split->prune = new_bipartition_from_bipsize (split->disagree[0]->n);
+
+  /* Allocate the assignment matrix only when a comparison has unmatched edges. */
+  split->match = false; /* do we want to calculate the assignment matching cost (using hungarian() )? */
+
+  return split;
 }
 
 void
-split_bipartition_size_l (int *count, const long long int  *l, split_space split)
+del_splitset (splitset split)
 {
-	int i;
-	(*count) = 0;
-	for (i=0; (i < split->n_active) ; i++) (*count) += (((*l) >> i) & 1LL);
+  int i;
+  if (!split) return;
+
+  del_bipartition (split->prune);
+  if (split->disagree) {
+    for (i = split->size - 1; i >= 0; i--) del_bipartition (split->disagree[i]);
+    free (split->disagree);
+  }
+  if (split->agree) {
+    for (i = split->size - 1; i >= 0; i--) del_bipartition (split->agree[i]);
+    free (split->agree);
+  }
+  if (split->g_split) {
+    for (i = split->size - 1; i >= 0; i--) del_bipartition (split->g_split[i]);
+    free (split->g_split);
+  }
+  if (split->s_split) {
+    for (i = split->size - 1; i >= 0; i--) del_bipartition (split->s_split[i]);
+    free (split->s_split);
+  }
+  del_hungarian (split->h);
+  free (split);
 }
 
-void
-extend_subtree_info_real (int *index, int *idx_n, split_space split)
+int
+compare_splitset_bipartition_increasing (const void *a1, const void *a2)
+{ /* similar to bipartition_is_larger() */
+  bipartition *b1 = (bipartition *) a1;
+  bipartition *b2 = (bipartition *) a2;
+  int i;
+
+  if ((*b1)->n_ones > (*b2)->n_ones) return 1;
+  if ((*b1)->n_ones < (*b2)->n_ones) return -1;
+
+  for (i = (*b1)->n->ints - 1; (i >= 0) && ((*b1)->bs[i] == (*b2)->bs[i]); i--); /* find position of distinct bipartition elem*/
+  if (i < 0) return 0; /* identical bipartitions */
+  if ((*b1)->bs[i] > (*b2)->bs[i]) return 1;
+  else return -1;
+}
+
+int
+compare_splitset_bipartition_decreasing (const void *a1, const void *a2)
 {
-	int i, j;
-//	for (i=0; i < (*idx_n); i++) printf ("[ %d ]", index[i]);
-//	printf ("\n");
-	for (i=0; i < (*idx_n); i++) for (j=0; j < split->n_leaves; j++) {
-		if (split->leaf_idx[j] == index[i]) split->leaf_recomb[j] = 1L;
-	}
+  return compare_splitset_bipartition_increasing (a2, a1);
+}
+
+int
+rf_hdist_topology_lowlevel (splitset split, bool exit_at_rf)
+{
+  split->hdist_reduced = split->hdist = split->rf = 0;
+  split->n_agree = split->n_disagree = 0;
+  bipsize_resize (split->disagree[0]->n, split->g_split[0]->n->bits);
+  bipsize_resize (split->agree[0]->n,    split->g_split[0]->n->bits);
+  split_create_agreement_list (split);  // vector of identical bipartitions
+  // Importantly, here we do NOT call split_compress_agreement()
+  split->rf = split->n_g + split->n_s;
+  if (exit_at_rf) return split->rf;
+  if (!split->rf) return 0; // all edges were in agreement
+  split->match = true; // only calculate hdist_reduced if match == True (first time)
+  split_create_disagreement_list (split); // vector of smallest disagreements
+  split_disagreement_assign_match (split); /* assignment matching between edges using hungarian method (split->hdist_reduced after first time) */
+  split->hdist = split->hdist_reduced;
+  return split->hdist; /* do not calculate SPR, exit now */
+}
+
+int
+dSPR_topology_lowlevel (splitset split)
+{
+  bool mismatch = true;
+  split->match = true;
+  split->hdist_reduced = split->spr = split->spr_extra = 0;
+  split->n_agree = split->n_disagree = 0;
+  bipsize_resize (split->disagree[0]->n, split->g_split[0]->n->bits);
+  bipsize_resize (split->agree[0]->n,    split->g_split[0]->n->bits);
+
+  while (mismatch) {
+    split_create_agreement_list (split);  // vector of identical bipartitions
+    split_compress_agreement (split);     // iterative replacement of cherry by new leaf
+
+    mismatch = (split->n_g > 0) && (split->n_s > 0); // all edges were in agreement
+    if (!mismatch) return split->spr;
+
+    split_create_disagreement_list (split); // vector of smallest disagreements
+    split_disagreement_assign_match (split); /* assignment matching between edges using hungarian method (split->hdist after first time) */
+
+    split_remove_duplicates (split->disagree, &(split->n_disagree)); // some elements are equal; this function also qsorts
+    split_find_small_disagreement (split);  // could also be one leaf only
+
+    split->spr++;
+    if (split->spr > split->cutoff) return split->spr;
+    split_remove_small_disagreement (split);
+
+    split_minimize_subtrees (split);
+    mismatch = (split->n_g > 0) && (split->n_s > 0); // all edges were in agreement
+  }
+  return split->spr;
 }
 
 void
-extend_subtree_info_dummy (int *index, int *idx_n, split_space split)
-{ (void) index; (void) idx_n; (void) split; return; }
-
-
-void
-store_compression_info_real (int *to, int *from, split_space split)
-{ 
-	/* before: 0 1 2 3 4 5
-	 * after:  0 0 2 3 4 5 (assuming to=0 and from=1) */
-	int i;
-	for (i=0; i < split->n_leaves; i++) { 
-		if (split->leaf_idx[i] == (*from)) split->leaf_idx[i] = (*to);
-	}
-  /* note from 2013.05.19: leaf_idx[] has the compressed index of each leaf, so that after a compression a 
-   * leaf_idx[]= { 0 0 2 0 4 5} means that leaves 0, 1 and 3 are (a common subtree?) represented by position 0 of the bitstring */
+split_create_agreement_list (splitset split)
+{
+  int s, g;
+  for (g = 0; g < split->n_g; g++) for (s = 0; s < split->n_s; s++)
+    if (bipartition_is_equal (split->g_split[g], split->s_split[s])) {
+      bipartition_copy (split->agree[split->n_agree++], split->g_split[g]);
+      split->n_g--; split_swap_position (split->g_split, g, split->n_g); /* if we don't swap them, we lose ref to "old" value on g_split[] */
+      split->n_s--; split_swap_position (split->s_split, s, split->n_s);
+      g--; s = split->n_s; /* pretend loop finished, examine again with new values */
+    }
+  split_remove_agree_edges (split, split->g_split, &(split->n_g));
+  split_remove_agree_edges (split, split->s_split, &(split->n_s));
 }
 
 void
-store_compression_info_dummy (int *to, int *from, split_space split)
-{ (void) to; (void) from; (void) split;  return; }
+split_remove_agree_edges (splitset split, bipartition *b, int *nb)
+{
+  int i, a;
+  for (i = 0; i < (*nb); i++) for (a = 0; a < split->n_agree; a++)
+    if (bipartition_is_equal (b[i], split->agree[a])) {
+      (*nb)--;
+      split_swap_position (b, i, (*nb));
+      i--;
+      a = split->n_agree; /* loop again over new value */
+    }
+}
+
+void
+split_remove_duplicates (bipartition *b, int *nb)
+{
+  int i, j;
+  bipartition pivot;
+  if ((*nb) < 2) return; /* only if we have a vector with > 1 element */
+  qsort (b, (*nb), sizeof (bipartition), compare_splitset_bipartition_increasing);
+
+  for (i = (*nb) - 1; i >= 1; i--)
+    if (bipartition_is_equal (b[i], b[i-1])) {
+      pivot = b[i]; /* do not lose a pointer to this element */
+      for (j = i; j < (*nb)-1; j++) b[j] = b[j+1];
+      b[j] = pivot; /* j = (*nb) - 1, which will become obsolete through next line -->  (*nb)-- */
+      (*nb)--;
+    }
+}
+
+void
+split_compress_agreement (splitset split)
+{
+  int i, j, pair[2];
+
+  for (i = 0; i < split->n_agree; i++) if (split->agree[i]->n_ones == 2) { /* cherry in common, can be represented by just one leaf */
+    bipartition_to_int_vector (split->agree[i], pair, 2);
+    if (split->leaf_idx) for (j=0; j <= split->size; j++)
+      if (split->leaf_idx[j] == pair[1]) split->leaf_idx[j] = pair[0];
+    split_remove_redundant_bit (split, pair[1]);
+    split_new_size (split,split->agree[0]->n->bits - 1, false); /* false = do not recalculate every bipartition's last elem */
+    bipartition_resize_vector (split->agree, split->n_agree);
+    for (j = 0; j < split->n_agree; j++) { /* minimize subtree size and remove single leaves */
+      bipartition_flip_to_smaller_set (split->agree[j]); /* agree only */
+      if (split->agree[j]->n_ones < 2) split_swap_position (split->agree, j--, --split->n_agree);
+    }
+    i = -1; /* redo all iterations, with new info (agree[] will be smaller) */
+  }
+  bipartition_resize_vector (split->g_split, split->n_g);
+  bipartition_resize_vector (split->s_split, split->n_s);
+}
+
+void
+split_create_disagreement_list (splitset split)
+{
+  /* Only matched edges can be prune candidates. Keep their bitsets and
+   * store the other pairwise comparisons as integer assignment costs. */
+  int g, s;
+  int n = MAX (split->n_g, split->n_s);
+  if (!split->h || split->h->size < n) {
+    del_hungarian (split->h);
+    split->h = new_hungarian (n);
+  }
+  /* Real cells are overwritten below. Only the padding needs clearing. */
+  for (g=0; g < n; g++) for (s=(g < split->n_g ? split->n_s : 0); s < n; s++)
+    hungarian_update_cost (split->h, g, s, 0);
+  for (g=0; g < split->n_g; g++) for (s=0; s < split->n_s; s++) {
+    bipartition_XOR (split->prune, split->g_split[g], split->s_split[s], true);
+    int ones = split->prune->n_ones;
+    hungarian_update_cost (split->h, g, s, MIN (ones, split->prune->n->bits - ones));
+  }
+}
+
+void
+split_disagreement_assign_match (splitset split)
+{
+  int g, max_n = MAX (split->n_g, split->n_s);
+  hungarian_solve (split->h, max_n);
+  if (split->h->final_cost < 0) biomc2_error ("tree split assignment failed");
+  /* now split->h->col_mate will have the pairs */
+  /* if we do the matching below it becomes much faster, but we may miss the best prune subtrees in a few cases (do not compromise the algo) */
+  split->n_disagree = 0;
+  for (g = 0; g < max_n; g++) if ((g < split->n_g) && ( split->h->col_mate[g] < split->n_s)) { /* some matchings might be to dummy edges */
+    bipartition_XOR (split->disagree[split->n_disagree], split->g_split[g], split->s_split[split->h->col_mate[g]], true); /* true means to calculate n_ones */
+    bipartition_flip_to_smaller_set (split->disagree[split->n_disagree++]);
+
+  }
+  if (split->match) { split->hdist_reduced = split->h->final_cost+split->h->initial_cost; split->match = false; }
+}
+
+void
+split_find_small_disagreement (splitset split)
+{
+  bipartition dis;
+  int a, d;
+
+  bipartition_copy (split->prune, split->disagree[0]); /* smallest, in case we don't find a better one in loop below */
+  if (split->prune->n_ones < 2) return;
+
+  dis = new_bipartition_from_bipsize (split->disagree[0]->n);
+  for (d = 0; d < split->n_disagree; d++) for (a = 0; a < split->n_agree; a++) {
+    if ((split->disagree[d]->n_ones == split->agree[a]->n_ones) ||
+        (split->disagree[d]->n_ones == (split->agree[a]->n->bits - split->agree[a]->n_ones))) {
+      bipartition_XOR (dis, split->disagree[d], split->agree[a], true);
+      if      (!dis->n_ones)               { bipartition_copy (split->prune, split->disagree[d]); d = split->n_disagree; a = split->n_agree; }
+      else if (dis->n_ones == dis->n->bits) { bipartition_NOT (split->prune, split->disagree[d]); d = split->n_disagree; a = split->n_agree; }
+
+    }
+  }
+  /* check if prune nodes are all on same side of a tree or if they are actually two SPRs (one from each tree) */
+  for (d = 0; d < split->n_g; d++) {
+    if (!bipartition_contains_bits (split->g_split[d], split->prune)) {
+      bipartition_NOT (dis, split->g_split[d]);
+      if (!bipartition_contains_bits (dis, split->prune)) { split->spr_extra++; d = split->n_g; }
+    }
+  }
+  del_bipartition (dis);
+}
+
+void
+split_remove_small_disagreement (splitset split)
+{
+  int *index, i, j = split->prune->n_ones - 1, k = 0, size = split->agree[0]->n->bits;
+
+  index = (int*) biomc2_malloc (split->prune->n_ones * sizeof (int));
+  bipartition_to_int_vector (split->prune, index, split->prune->n_ones);
+
+  if (split->leaf_idx) for (i=0; i <= split->size; i++) {
+    if (split->leaf_idx[i] >= 0 && bipartition_is_bit_set (split->prune, split->leaf_idx[i])) {
+      split->leaf_recomb[i] = 1;
+      split->leaf_idx[i] = -1;
+    }
+  }
+  for (i = size - 1; i >= (size - split->prune->n_ones); i--) {
+    if (k > j || index[k] >= (size - split->prune->n_ones)) i = -1;
+    else {
+      if (i == index[j]) j--;
+      else split_replace_bit (split, index[k++], i);
+    }
+  }
+
+  split_new_size (split,size - split->prune->n_ones, true);
+  if (index) free (index);
+}
+
+void
+split_minimize_subtrees (splitset split)
+{
+  int i;
+
+  for (i = 0; i < split->n_s; i++) {
+    bipartition_flip_to_smaller_set (split->s_split[i]);
+    if (split->s_split[i]->n_ones < 2) { split->n_s--; split_swap_position (split->s_split, i, split->n_s); i--; }
+  }
+  for (i = 0; i < split->n_g; i++) {
+    bipartition_flip_to_smaller_set (split->g_split[i]);
+    if (split->g_split[i]->n_ones < 2) { split->n_g--; split_swap_position (split->g_split, i, split->n_g); i--; }
+  }
+  for (i = 0; i < split->n_agree; i++) {
+    bipartition_flip_to_smaller_set (split->agree[i]);
+    if (split->agree[i]->n_ones < 2) { split->n_agree--; split_swap_position (split->agree, i, split->n_agree); i--; }
+  }
+}
+
+void
+split_remove_redundant_bit (splitset split, int id)
+{
+  int  last = split->agree[0]->n->bits-1;
+  if (id < last) split_replace_bit (split, id, last);
+}
+
+void
+split_replace_bit (splitset split, int to, int from)
+{
+  if (from <= to) return;
+  if (split->leaf_idx) for (int i=0; i <= split->size; i++)
+    if (split->leaf_idx[i] == from) split->leaf_idx[i] = to;
+  /*not needed for disagree[] */
+  bipartition_replace_bit_in_vector (split->agree,   split->n_agree, to, from, true);
+  bipartition_replace_bit_in_vector (split->g_split, split->n_g,     to, from, true);
+  bipartition_replace_bit_in_vector (split->s_split, split->n_s,     to, from, true);
+}
+
+void
+split_new_size (splitset split, int size, bool update_bipartitions)
+{
+  bipsize_resize (split->g_split[0]->n, size);
+  bipsize_resize (split->s_split[0]->n, size);
+  bipsize_resize (split->agree[0]->n, size);
+  bipsize_resize (split->disagree[0]->n, size);
+  if (update_bipartitions) {
+    bipartition_resize_vector (split->g_split, split->n_g);
+    bipartition_resize_vector (split->s_split, split->n_s);
+    bipartition_resize_vector (split->agree, split->n_agree);
+  }
+}
+
+void
+split_swap_position (bipartition *b, int i1, int i2)
+{
+  bipartition pivot = b[i1];
+  b[i1] = b[i2];
+  b[i2] = pivot;
+}

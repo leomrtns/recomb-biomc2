@@ -64,7 +64,7 @@ new_phylogeny (int nchar, int ntax, int ncycles)
 node_likelihood
 new_node_likelihood (int nchar, int ncycles)
 {
-	int i,j;
+	int i;
 	node_likelihood l;
 	l =	
 	(node_likelihood) biomc2_malloc (sizeof (struct node_likelihood_struct));
@@ -82,16 +82,8 @@ new_node_likelihood (int nchar, int ncycles)
 	}
 
 	for (i=0; i < l->size; i++) {
-		l->u[i]->lk = 
-		(double**) biomc2_malloc ((nchar) * sizeof (double*));
-		l->d[i]->lk = 
-		(double**) biomc2_malloc ((nchar) * sizeof (double*));
-		for (j=0; j < (nchar); j++) {
-			l->u[i]->lk[j] =
-			(double*) biomc2_malloc (4 * sizeof (double));
-			l->d[i]->lk[j] =
-			(double*) biomc2_malloc (4 * sizeof (double));
-		}
+    l->u[i]->lk = biomc2_malloc ((size_t)nchar * sizeof (site_partial));
+    l->d[i]->lk = biomc2_malloc ((size_t)nchar * sizeof (site_partial));
 		l->u[i]->prev = l->u[i]->next = 
 		l->d[i]->prev = l->d[i]->next = NULL;
 	}
@@ -117,7 +109,7 @@ new_node_likelihood (int nchar, int ncycles)
 void 
 del_phylogeny (phylogeny p)
 {
-	int i, j, k, nnodes = 2*p->ntax - 2;
+	int i, k, nnodes = 2*p->ntax - 2;
 	
 	if (!p) return;
 
@@ -127,13 +119,11 @@ del_phylogeny (phylogeny p)
 				for (k= (p->l[i]->size - 1); k>=0; k--) {
 					if (p->l[i]->u[k] && p->l[i]->u[k]->lk) 
 					 {
-						for (j=p->nchar-1; j>=0; j--) if (p->l[i]->u[k]->lk[j]) free (p->l[i]->u[k]->lk[j]);
 						free (p->l[i]->u[k]->lk); 
 						free (p->l[i]->u[k]); 
 					 }
 					if (p->l[i]->d[k] && p->l[i]->d[k]->lk) 
 					 { 
-						for (j=p->nchar-1; j>=0; j--) if (p->l[i]->d[k]->lk[j]) free (p->l[i]->d[k]->lk[j]);
 						free (p->l[i]->d[k]->lk);
 						free (p->l[i]->d[k]);
 					 }
@@ -169,7 +159,7 @@ store_likelihood_at_leaf (node_likelihood l, char *align, int *index, int align_
 	int bit[256];
 
 	for (j=0; j < align_size; j++)
-		for (i=0; i < 4; i++)
+		for (i=0; i < 5; i++)
 			l->u[0]->lk[j][i] = l->d[0]->lk[j][i] = 0.;
 
   for (i = 0; i < 256; i++) bit[i] = 0;
@@ -208,7 +198,7 @@ average_rate_distance_method (phylogeny phy)
 	int i1, i2, b1, b2, pos;
 	int e_1=0, d_1=0;
 	double e_2 = 0., d_2=0.;
-	double **seq1, **seq2;
+	site_partial *seq1, *seq2;
 	
 	for (i1=1; i1 < phy->ntax; i1++) {
 		seq1 = phy->l[i1]->d[0]->lk;
@@ -245,7 +235,7 @@ void
 update_equilibrium_frequencies (double *pi, phylogeny phy)
 {
 	int i, b, pos;
-	double **seq;
+	site_partial *seq;
 	
 	for (i=0; i < phy->ntax; i++) {
 		seq = phy->l[i]->d[0]->lk;
