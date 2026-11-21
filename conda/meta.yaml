@@ -1,21 +1,22 @@
 package:
   name: biomc2
-  version: "2.0.0"
+  version: "2.0.1"
 source:
-  git_url: ..
+  path: ..
 build:
   number: 0
 requirements:
   build:
     - {{ compiler('c') }}
-    - autoconf
+    - autoconf >=2.70
     - automake
     - make
-    - git
+    - python >=3.10
+  run:
+    - r-base
 test:
   requires:
-    - python
-    - r-base
+    - python >=3.10
   source_files:
     - tests/regression.py
     - example/
@@ -23,6 +24,6 @@ test:
     - BIOMC2_BINDIR="$PREFIX/bin" python tests/regression.py
 about:
   home: https://github.com/leomrtns/recomb-biomc2
-  license: GPL-3.0-or-later
+  license: GPL-2.0-or-later
   license_file: COPYING
   summary: Bayesian inference of recombination breakpoints from phylogenetic incongruence

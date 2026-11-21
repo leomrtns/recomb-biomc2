@@ -26,8 +26,7 @@
 
 /* local variables */
 
-static int s1, s2, site;
-static double LikSite;
+static int site;
 static site_partial *up, *down, *sister, *left, *right;
 
 /* Rescale by an exact power of two before a large clade underflows. Moving
@@ -38,11 +37,10 @@ combine_partials (phylogeny p, site_partial *out, site_partial *a, site_partial 
   for (int i=0; i < p->nchar; i++) {
     double largest = 0.;
     for (int x=0; x < 4; x++) {
-      double l = 0., r = 0.;
-      for (int y=0; y < 4; y++) {
-        l += p->Q[x][y] * a[i][y];
-        r += p->Q[x][y] * b[i][y];
-      }
+      /* Four DNA states: spelling out the dot products avoids the inner loop. */
+      const double *q = p->Q[x];
+      double l = q[0]*a[i][0] + q[1]*a[i][1] + q[2]*a[i][2] + q[3]*a[i][3];
+      double r = q[0]*b[i][0] + q[1]*b[i][1] + q[2]*b[i][2] + q[3]*b[i][3];
       out[i][x] = l * r;
       if (out[i][x] > largest) largest = out[i][x];
     }
@@ -52,6 +50,18 @@ combine_partials (phylogeny p, site_partial *out, site_partial *a, site_partial 
       out[i][4] -= 256. * 0.69314718055994530942;
     }
   }
+}
+
+static double
+log_site_likelihood (phylogeny p, const double *upper, const double *lower)
+{
+  double likelihood = 0.;
+  for (int i=0; i < 4; i++) {
+    const double *q = p->Q[i];
+    likelihood += p->pi[i] * upper[i] *
+      (q[0]*lower[0] + q[1]*lower[1] + q[2]*lower[2] + q[3]*lower[3]);
+  }
+  return log (likelihood) + upper[4] + lower[4];
 }
 
 /* local function prototypes */
@@ -127,10 +137,7 @@ ln_likelihood (phylogeny *p, topology t)
 
 		p[i]->likelihood_proposal = 0.;
 		for (site = 0; site < p[i]->nchar; site++) {
-			LikSite = 0.;
-			for (s1 = 0; s1 < 4; s1++) for (s2 = 0; s2 < 4; s2++)
-				LikSite+= p[i]->pi[s1] * up[site][s1] * p[i]->Q[s1][s2] * down[site][s2];
-			p[i]->likelihood_proposal	+= ( p[i]->site_weight[site] * (log (LikSite) + up[site][4] + down[site][4]) );
+			p[i]->likelihood_proposal	+= ( p[i]->site_weight[site] * log_site_likelihood (p[i], up[site], down[site]) );
 		}
 		t->likelihood_proposal += p[i]->likelihood_proposal;
 	}
@@ -140,8 +147,8 @@ void
 update_likelihood (phylogeny *p, topol_node this, topology t)
 {
 	int i;
-	if (this->left->internal)  update_likelihood_moved_branches (p, this->left, t);
-	if (this->right->internal) update_likelihood_moved_branches (p, this->right, t);
+	if (this->left->internal)  update_likelihood (p, this->left, t);
+	if (this->right->internal) update_likelihood (p, this->right, t);
 
 	for (i=t->first_segment; i <= t->last_segment; i++) {
     left = p[i]->l[this->left->id]->d_current->next->lk;
@@ -226,10 +233,7 @@ ln_likelihood_moved_branches (phylogeny *p, topology t)
 
 		p[i]->likelihood_proposal = 0.;
 		for (site = 0; site < p[i]->nchar; site++) {
-			LikSite = 0.;
-			for (s1 = 0; s1 < 4; s1++) for (s2 = 0; s2 < 4; s2++)
-				LikSite+= p[i]->pi[s1] * up[site][s1] * p[i]->Q[s1][s2] * down[site][s2];
-			p[i]->likelihood_proposal	+= ( p[i]->site_weight[site] * (log (LikSite) + up[site][4] + down[site][4]) );
+			p[i]->likelihood_proposal	+= ( p[i]->site_weight[site] * log_site_likelihood (p[i], up[site], down[site]) );
 		}
 		t->likelihood_proposal += p[i]->likelihood_proposal;
 	}
@@ -344,10 +348,7 @@ ln_likelihood_proposal (phylogeny p, topology t)
 	down = p->l[t->root->left->id]->d_accepted->next->lk;
 
 	for (site = 0; site < p->nchar; site++) {
-		LikSite = 0.;
-		for (s1 = 0; s1 < 4; s1++) for (s2 = 0; s2 < 4; s2++)
-			LikSite+= (p->pi[s1] * up[site][s1] * p->Q[s1][s2] * down[site][s2]);
-		p->likelihood_proposal += p->site_weight[site] * (log (LikSite) + up[site][4] + down[site][4]);
+		p->likelihood_proposal += p->site_weight[site] * log_site_likelihood (p, up[site], down[site]);
 	}
 }
 

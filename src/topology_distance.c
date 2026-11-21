@@ -159,6 +159,7 @@ dSPR_topology_l (topology a, topology b, split_space split, int *max)
   split->rfdistance = w->n_g - common; /* historical half-RF column in biomc2.distance */
   if (split->metric == METRIC_RF) return 2 * split->rfdistance;
   if (split->metric == METRIC_HDIST) return rf_hdist_topology_lowlevel (w, false);
+  if (!split->record_leaves && split->rfdistance == 1) return 1;
   w->leaf_idx = split->record_leaves ? split->leaf_idx : NULL;
   w->leaf_recomb = split->leaf_recomb;
   w->cutoff = *max;

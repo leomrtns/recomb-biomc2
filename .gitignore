@@ -1,5 +1,7 @@
 /build
 /.work/
+/.review/
+/gmon.out
 /autom4te.cache/
 /configure
 /configure~

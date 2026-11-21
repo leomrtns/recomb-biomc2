@@ -52,7 +52,7 @@ read_nexus_alignment_file (char *seqfilename)
   int ntax=0, nchar=0;
 
   seqfile = biomc2_fopen (seqfilename, "r");
-  biomc2_getline (&line_read, &linelength, seqfile);
+  if (biomc2_getline (&line_read, &linelength, seqfile) < 0) biomc2_error ("empty NEXUS alignment");
 
   if (!strcasestr (line_read, "NEXUS")) biomc2_error ( "Not a Nexus sequence file\n");
 
@@ -75,7 +75,8 @@ read_nexus_alignment_file (char *seqfilename)
         else if ( (needle_tip = strcasestr (line, "DIMENSIONS")) ) {
           needle_tip += strlen("DIMENSIONS");
           needle_tip = uppercase_string (needle_tip);
-          sscanf (needle_tip, " NTAX = %d NCHAR = %d ", &ntax, &nchar);
+          if (sscanf (needle_tip, " NTAX = %d NCHAR = %d ", &ntax, &nchar) != 2 || ntax < 3 || nchar < 1)
+            biomc2_error ("invalid NEXUS dimensions");
           align = new_nexus_alignment (ntax, nchar);
         } // else if (needle_tip)
       }
@@ -124,7 +125,11 @@ read_nexus_alignment_file (char *seqfilename)
 			
 		} // if (line)
 	} //while (biomc2_getline)
-	fclose (seqfile);
+  if (!align || !option_read_complete) biomc2_error ("incomplete NEXUS alignment");
+  for (int i=0; i < align->ntax; i++)
+    if (!align->taxlabel[i] || strlen (align->character[i]) != (size_t)align->nchar)
+      biomc2_error ("alignment row %d does not match NCHAR", i+1);
+  fclose (seqfile);
 	if (line) free (line);
 	return align;
 }
@@ -214,7 +219,8 @@ read_interleaved_nexus_sequence (char *line, nexus_alignment align) /* localfunc
 	position = lookup_hashtable (align->taxlabel_hash, seqname);
 	if (position < 0) {
 		position = binary_search_next_available (align->taxlabel, align->ntax);
-		align->taxlabel[position] = new_taxlabel (seqname);
+    if (position < 0 || position >= align->ntax) biomc2_error ("more taxa than declared by NTAX");
+    align->taxlabel[position] = new_taxlabel (seqname);
 		insert_hashtable (align->taxlabel_hash, seqname, position);
 	}
 	line = remove_space_from_string (line+namelength);

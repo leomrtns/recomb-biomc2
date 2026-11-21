@@ -94,9 +94,10 @@ new_chain_data_from_file (char *filename)
 	if (strlen (chain->seq_filename) ) a = read_nexus_alignment_file (chain->seq_filename);
   else biomc2_error ( "no SEQFILE command in control file\n");
 
-	if ((chain->n_segments < 2) || (chain->n_segments > a->nchar)) {
+  if (a->ntax < 4 || a->nchar < 2) biomc2_error ("the sampler needs at least four taxa and two sites");
+  if ((chain->n_segments < 2) || (chain->n_segments > a->nchar)) {
 		if (a->n_charset > 1) chain->n_segments = a->n_charset;
-		else { chain->n_segments = a->nchar/2; a->n_charset = 0; }
+		else { chain->n_segments = MAX (2, a->nchar/2); a->n_charset = 0; }
 	}
 	else a->n_charset = 0;
 
@@ -317,38 +318,44 @@ initialize_poisson_chain_data (chain_data chain)
 void
 store_chain_data_site_pattern (chain_data chain, nexus_alignment a)
 {
-  size_t capacity = 1;
-  while (capacity < 2 * (size_t)a->nchar) capacity *= 2;
-  int *table = biomc2_malloc (capacity * sizeof *table);
-  for (size_t i=0; i < capacity; i++) table[i] = -1;
+  bool equal;
+  int s1, s2, seq, lastsite = a->nchar;
+	int chunked_gain, index[a->nchar];
 
-  /* Hash the original columns once; compare actual states on a hash collision.
-   * Compact towards the left so unread sites are never overwritten. */
-  int distinct = 0;
-  for (int site=0; site < a->nchar; site++) {
-    uint64_t hash = UINT64_C(14695981039346656037);
-    for (int taxon=0; taxon < a->ntax; taxon++)
-      hash = (hash ^ (unsigned char)a->character[taxon][site]) * UINT64_C(1099511628211);
-    size_t slot = hash & (capacity - 1);
-    while (table[slot] >= 0) {
-      int taxon = 0;
-      while (taxon < a->ntax && a->character[taxon][site] == a->character[taxon][table[slot]]) taxon++;
-      if (taxon == a->ntax) break;
-      slot = (slot + 1) & (capacity - 1);
-    }
-    if (table[slot] < 0) {
-      table[slot] = distinct++;
-      for (int taxon=0; taxon < a->ntax; taxon++)
-        a->character[taxon][table[slot]] = a->character[taxon][site];
-    }
-    chain->site_pattern[site] = table[slot];
-  }
-  free (table);
-  a->nchar = distinct;
-  for (int taxon=0; taxon < a->ntax; taxon++) {
-    a->character[taxon] = biomc2_realloc (a->character[taxon], (size_t)distinct + 1);
-    a->character[taxon][distinct] = '\0';
-  }
+	for (s1=0; s1 < lastsite; s1++) index[s1] = s1;
+
+	for (s1 = 0; s1 < lastsite - 1; s1++) {
+		for (s2 = s1 + 1; s2 < lastsite; s2++) {
+
+			for (equal = true, seq = 0; (equal == true) && (seq < a->ntax); seq++)
+        if (a->character[seq][s1] != a->character[seq][s2]) equal = false;
+
+			/* s1 and s2 have identical patterns */
+      if (equal == true) {
+				chain->site_pattern[index[s2]] = s1;
+				lastsite--;
+				if (s2 < lastsite) {
+					for (seq = 0; seq < a->ntax; seq++)
+						a->character[seq][s2] = a->character[seq][lastsite];
+					index[s2] = index[lastsite];
+				}
+				s2--;/* compare again, since character[][s2] now contains last site */
+			}// if (equalpattern)
+		}// for (s2)
+		chain->site_pattern[index[s1]] = s1;
+	}// for (s1)
+	chain->site_pattern[index[s1]] = s1;
+
+	chunked_gain = a->nchar - lastsite;
+
+	if (chunked_gain > 0) {
+		a->nchar -= chunked_gain;
+		for (seq = 0; seq < a->ntax; seq++) {
+			a->character[seq] =
+			(char *) biomc2_realloc ((char*) a->character[seq], (a->nchar + 1) * sizeof (char));
+			a->character[seq][a->nchar] = '\0';
+		}
+	}
 }
 
 
@@ -430,7 +437,7 @@ void
 read_biomc_file (char *filename, chain_data chain) 
 {
   FILE *file;
-	char *line=NULL, *needle_tip;
+	char *line=NULL, *needle_tip, command[32];
 	size_t linelength = 0;
 
   file = biomc2_fopen (filename, "r");
@@ -440,76 +447,83 @@ read_biomc_file (char *filename, chain_data chain)
   while (biomc2_getline (&line, &linelength, file) != -1) {
     line = remove_nexus_comments (&line, &linelength, file);
 		/* do not parse empty lines ( = "\n\0") */	
-		if (strlen (line) > 1) { 
+		if ((needle_tip = strchr (line, '='))) {
+      char *start = line, *end = needle_tip;
+      while (isspace ((unsigned char)*start)) start++;
+      while (end > start && isspace ((unsigned char)end[-1])) end--;
+      if (end == start || (size_t)(end-start) >= sizeof command)
+        biomc2_error ("invalid control parameter name");
+      memcpy (command, start, end-start);
+      command[end-start] = '\0';
 			/* read hyperprior information */
 	
-			if (strcasestr (line, "RATE") && (needle_tip = strcasestr (line, "="))) {
+			if (!strcasecmp (command, "RATE")) {
 				needle_tip++; // Exp(rate) => E[x] = rate
 				if ((sscanf (needle_tip, " %lf ", &chain->hp_rate)) != 1)	
           biomc2_error ( "could not read RATE information (it should be a single float or integer number)\n");
 			}
 
-			if (strcasestr (line, "KAPPA") && (needle_tip = strcasestr (line, "="))) {
+			else if (!strcasecmp (command, "KAPPA")) {
 				needle_tip++; // Exp(kappa) => E[x] = kappa
 				if ((sscanf (needle_tip, " %lf ", &chain->hp_kappa)) != 1)	
           biomc2_error ( "could not read KAPPA information (it should be a single float or integer number)\n");
 			}
 
-			else if (strcasestr (line, "METRIC") && (needle_tip = strchr (line, '='))) {
+			else if (!strcasecmp (command, "METRIC")) {
         char name[32], trailing;
         if (sscanf (needle_tip + 1, " %31s %c", name, &trailing) != 1)
           biomc2_error ("expected metric = dspr, rf or hdist");
         chain->metric = parse_tree_metric (name);
       }
-      else if (strcasestr (line, "DISTANCE") && (needle_tip = strcasestr (line, "="))) {
+      else if (!strcasecmp (command, "DISTANCE")) {
 				needle_tip++; // gamma (a,b) -> E[x] = a/b 
         if ((sscanf (needle_tip, " %lf %lf ", &(chain->hp_lambda_alpha), &(chain->hp_lambda_beta))) != 2)	
           biomc2_error ( "could not read DISTANCE information (it should be _two_ float or integer numbers, one for alpha and one for beta)\n");
 			}
 
-			else if (strcasestr (line, "TREEFILE") && (needle_tip = strcasestr (line, "="))) {
+			else if (!strcasecmp (command, "TREEFILE")) {
 				needle_tip++;
         if ((sscanf (needle_tip, " %511s ", chain->tree_filename)) != 1)
 					biomc2_error ( "could not read TREEFILE information (it should be a single file name without spaces or non-standard characters)\n");
 			}
 
-			else if (strcasestr (line, "SEQFILE") && (needle_tip = strcasestr (line, "="))) {
+			else if (!strcasecmp (command, "SEQFILE")) {
 				needle_tip++;
 				if ((sscanf (needle_tip, " %511s ", chain->seq_filename)) != 1)
 					biomc2_error ( "could not read SEQFILE information (it should be a single file name without spaces or non-standard characters)\n");
 			}
 
-			else if (strcasestr (line, "NGEN") && (needle_tip = strcasestr (line, "="))) {
+			else if (!strcasecmp (command, "NGEN")) {
 				needle_tip++;
 				if ((sscanf (needle_tip, " %d ", &chain->ngen)) != 1)	
           biomc2_error ( "could not read NGEN information (it should be a single, integer value)\n");
 			}
 
-			else if (strcasestr (line, "WARMUP") && (needle_tip = strcasestr (line, "="))) {
+			else if (!strcasecmp (command, "WARMUP")) {
 				needle_tip++;
 				if ((sscanf (needle_tip, " %d ", &chain->warmup)) != 1)	
 					biomc2_error ( "could not read WARMUP information (it should be a single, integer value)\n");
 			}
 
-			else if (strcasestr (line, "NSAMPLES") && (needle_tip = strcasestr (line, "="))) {
+			else if (!strcasecmp (command, "NSAMPLES")) {
 				needle_tip++;
 				if ((sscanf (needle_tip, " %d ", &(chain->nsamples))) != 1)	
 					biomc2_error ( "could not read NSAMPLES information (it should be a single, integer value)\n");
 			}
 
-			else if (strcasestr (line, "BURNIN") && (needle_tip = strcasestr (line, "="))) {
+			else if (!strcasecmp (command, "BURNIN")) {
 				needle_tip++;
         if ((sscanf (needle_tip, " %d ", &(chain->burnin))) != 1)	
           biomc2_error ( "could not read BURNIN information (it should be a single, integer value)\n");
 			}
 
-			else if (strcasestr (line, "NSEGMENTS") && (needle_tip = strcasestr (line, "="))) {
+			else if (!strcasecmp (command, "NSEGMENTS")) {
 				needle_tip++;
 				if ((sscanf (needle_tip, " %d ", &(chain->n_segments))) != 1)	
           biomc2_error ( "could not read NSEGMENTS information (it should be a single, integer number)\n");
 			}
 
-			else if (strcasestr (line, "PRIOR") && (needle_tip = strcasestr (line, "="))) {
+			else if (!strcasecmp (command, "PRIOR")) {
 				needle_tip++;
 				int prior;
         if (sscanf (needle_tip, " %d ", &prior) != 1 || (prior != 0 && prior != 1))
@@ -517,50 +531,50 @@ read_biomc_file (char *filename, chain_data chain)
         chain->prior = prior;
 			}
 
-			else if (strcasestr (line, "UPDATE") && (needle_tip = strcasestr (line, "="))) {
+			else if (!strcasecmp (command, "UPDATE")) {
 				needle_tip++;
 				if ((sscanf (needle_tip, " %lf %lf %lf %lf ", &(chain->update_rate), &(chain->update_kappa), 
                      &(chain->update_lambda), &(chain->update_penalty))) != 4)	
           biomc2_error ( "could not read UPDATE information (it should be _four_ real numbers); Try removing the line with \"update\")\n");
 			}
 
-      else if (strcasestr (line, "PENALTY") && (needle_tip = strcasestr (line, "="))) {
+      else if (!strcasecmp (command, "PENALTY")) {
         needle_tip++;
         if ((sscanf (needle_tip, " %lf %lf ", &(chain->hp_penalty_alpha), &(chain->hp_penalty_beta))) != 2)	
           biomc2_error ( "could not read PENALTY information (it should be _two_ float or integer numbers, one for alpha and one for beta)\n");
       }
 
-      else if (strcasestr (line, "MAXDIST") && (needle_tip = strcasestr (line, "="))) {
+      else if (!strcasecmp (command, "MAXDIST")) {
         needle_tip++;
         if ((sscanf (needle_tip, " %d ", &(chain->max_distance)) ) != 1)	
           biomc2_error ( "could not read MAXDIST information\n");
 			}
  
-      else if (strcasestr (line, "PROPOSAL") && (needle_tip = strcasestr (line, "="))) {
+      else if (!strcasecmp (command, "PROPOSAL")) {
         needle_tip++;
 				if ((sscanf (needle_tip, " %d %d ", &(chain->ratio_spr), &(chain->ratio_topol_update) ) ) != 2)
           biomc2_error ( "could not read PROPOSAL information\n");
 			}
 
-			else if (strcasestr (line, "ANNEAL") && (needle_tip = strcasestr (line, "="))) {
+			else if (!strcasecmp (command, "ANNEAL") || !strcasecmp (command, "ANNEALING")) {
         needle_tip++;
 				if ((sscanf (needle_tip, " %lf ", &(chain->beta_final)) ) != 1)	
           biomc2_error ( "could not read ANNEAL information\n");
 			}
 
-      else if (strcasestr (line, "MC3") && (needle_tip = strcasestr (line, "="))) {
+      else if (!strcasecmp (command, "MC3")) {
         needle_tip++;
 				if ((sscanf (needle_tip, " %lf %d ", &(chain->kT_heat), &(chain->swap_interval)) ) != 2)	
           biomc2_error ( "could not read MC3 information\n");
 			}
 
-      else if (strcasestr (line, "AWADHI") && (needle_tip = strcasestr (line, "="))) {
+      else if (!strcasecmp (command, "AWADHI")) {
         needle_tip++;
 				if ((sscanf (needle_tip, " %lf %d ", &(chain->kT_cycles), &(chain->n_cycles)) ) != 2)	
           biomc2_error ( "could not read AWADHI information\n");
 			}
 
-			else if (strcasestr (line, "MINISAMPLER") && (needle_tip = strcasestr (line, "="))) {
+			else if (!strcasecmp (command, "MINISAMPLER")) {
         needle_tip++;
 				if ((sscanf (needle_tip, " %lf %d ", &(chain->kT_mini), &(chain->n_mini)) ) != 2)	
           biomc2_error ( "could not read MINISAMPLER information\n");

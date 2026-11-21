@@ -242,15 +242,14 @@ split_compress_agreement (splitset split)
       if (split->leaf_idx[j] == pair[1]) split->leaf_idx[j] = pair[0];
     split_remove_redundant_bit (split, pair[1]);
     split_new_size (split,split->agree[0]->n->bits - 1, false); /* false = do not recalculate every bipartition's last elem */
-    bipartition_resize_vector (split->agree, split->n_agree);
+    /* Replacing the removed bit already maintains n_ones and clears the last
+     * position in every vector. Recounting all bits after each cherry is redundant. */
     for (j = 0; j < split->n_agree; j++) { /* minimize subtree size and remove single leaves */
       bipartition_flip_to_smaller_set (split->agree[j]); /* agree only */
       if (split->agree[j]->n_ones < 2) split_swap_position (split->agree, j--, --split->n_agree);
     }
     i = -1; /* redo all iterations, with new info (agree[] will be smaller) */
   }
-  bipartition_resize_vector (split->g_split, split->n_g);
-  bipartition_resize_vector (split->s_split, split->n_s);
 }
 
 void
@@ -369,13 +368,13 @@ void
 split_remove_redundant_bit (splitset split, int id)
 {
   int  last = split->agree[0]->n->bits-1;
-  if (id < last) split_replace_bit (split, id, last);
+  split_replace_bit (split, id, last);
 }
 
 void
 split_replace_bit (splitset split, int to, int from)
 {
-  if (from <= to) return;
+  if (from < to) return;
   if (split->leaf_idx) for (int i=0; i <= split->size; i++)
     if (split->leaf_idx[i] == from) split->leaf_idx[i] = to;
   /*not needed for disagree[] */

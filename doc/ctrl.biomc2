@@ -75,12 +75,8 @@ update    = 1 1 1 1
 
 proposal  = 10 2
 
-[ initial and final 1/kT (heat) (inside cycle) for warm-up stage and cycle increment.          ]
-[ 1/kT < 1, more states accepted; 1/kT > 1, only better states accepted (simulated annealing). ]
-[ increment > 1, 1/kT initial and final increase at each cycle; should be close to one.        ]
-[ order: <initial> <final> <increment> (real numbers) ]
-
-heat = 0.8 1. 1.
+[ Final inverse temperature for each warm-up cycle. ]
+annealing = 2.
 
 [ Metropolis-coupled MCMC (one cold and one heated chain).  ]
 [ this is the 1/kT for the heated chain and interval at wich swap between chains should be tried.  ]
@@ -111,4 +107,4 @@ awadhi = 0.2 2
 minisampler = 0.5 2 
 
 
-[ This is the BIOMC2 version 1.5 control file template. ]
+[ BIOMC2 control file template. ]

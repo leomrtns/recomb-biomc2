@@ -26,6 +26,7 @@
  */
 
 #include "summary.h"
+#include <limits.h>
 
 void read_summary_topol_from_file (summary sm, char *treefile);
 void read_summary_dist_from_file (summary sm, char *distfile);
@@ -100,10 +101,11 @@ read_summary_dist_from_file (summary sm, char *distfile)
 
   file = biomc2_fopen (distfile, "r");
 
-  biomc2_getline (&line_read, &linelength, file);
+  if (biomc2_getline (&line_read, &linelength, file) < 0) biomc2_error ("incomplete distance file header");
   if (sscanf (line_read, "Nseg %d Nsamples %d", &(sm->n_segments), &(sm->n_samples_original)) != 2)
     biomc2_error ( "malformed post.dist file (first line should be 'Nseg # Nsamples #')\n");
 
+  if (sm->n_segments < 1) biomc2_error ("Nseg must be positive");
   char name[32];
   const char *key = strstr (line_read, "Metric ");
   strcpy (sm->metric, "dspr");
@@ -116,12 +118,16 @@ read_summary_dist_from_file (summary sm, char *distfile)
 
   sm->n_coldspot = 0;
 
-  biomc2_getline (&line_read, &linelength, file);
+  if (biomc2_getline (&line_read, &linelength, file) < 0) biomc2_error ("incomplete distance file header");
   first_char = line_read;
   for (i=0; i < sm->n_segments; i++) {
-    if (sscanf (first_char, "%d ",&(sm->breakpoint[i])) != 1) 
-      biomc2_error ("could not read potential breakpoint (# %d) location (second line of post.dist file)\n", i+1);
-    if (i+1 < sm->n_segments) first_char = strchr (first_char, ' ') + 1;
+    char *end;
+    long position = strtol (first_char, &end, 10);
+    if (end == first_char || position < 1 || position > INT_MAX ||
+        (i && position <= sm->breakpoint[i-1]))
+      biomc2_error ("invalid boundary position %d in distance file", i+1);
+    sm->breakpoint[i] = (int)position;
+    first_char = end;
   }
   sm->n_sites = sm->breakpoint[sm->n_segments-1];
 
@@ -160,6 +166,8 @@ read_summary_dist_from_file (summary sm, char *distfile)
     if (sscanf (line_read, "%d %lf %d %d %lf %lf ", &i1, &(sm->LnL[sm->n_samples]), &(sm->nSPR[sm->n_samples]), 
                 &(sm->nCOP[sm->n_samples]), &(sm->prior_rate[sm->n_samples]), &(sm->prior_kappa[sm->n_samples])) != 6) 
       biomc2_error ("could not read initial info for sample on line %d of post.dist file\n", i+3);
+    if (sm->nCOP[sm->n_samples] < 0 || sm->nCOP[sm->n_samples] >= sm->n_segments)
+      biomc2_error ("invalid breakpoint count in sample %d", sm->n_samples + 1);
     prev = 0;
     first_char = line_read;
     for (j=0; j < sm->nCOP[sm->n_samples]; j++) {
@@ -192,6 +200,7 @@ read_summary_dist_from_file (summary sm, char *distfile)
   if (!sm->n_samples) biomc2_error ("No posterior samples yet");
   if (sm->n_samples != sm->n_samples_original) biomc2_error ("posterior trace changed during reading");
 
+  if (counter != sm->n_index) biomc2_error ("tree and distance files have different sample counts");
   fclose (file);
   if (line_read) free (line_read);
 }

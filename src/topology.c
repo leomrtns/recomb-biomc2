@@ -37,6 +37,8 @@ new_topology (int nleaves)
 
 
 
+  if (nleaves < 3) biomc2_error ("an unrooted tree needs at least three leaves");
+
   tree = 
   (topology) biomc2_malloc (sizeof (struct topology_struct));
   tree->nleaves = nleaves;

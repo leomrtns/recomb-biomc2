@@ -5,7 +5,13 @@ input <- if (length(args)) args[1] else "breakpoint-profile.tsv"
 output <- if (length(args) > 1L) args[2] else "recomb_freq.pdf"
 d <- read.delim(input)
 pdf(output, width = 8, height = 6)
-par(mfrow = c(2, 1), mar = c(4, 4, 2, 1))
+layout(matrix(seq_len(3)), heights = c(0.16, 1, 1))
+par(mar = rep(0, 4))
+plot.new()
+legend("center", c(paste("Mean", d$metric[1], "distance"), "Breakpoint probability", "Pooled intervals"),
+       col = c("grey55", "#0072B2", "#B34700"), lty = c(1, NA, 1),
+       pch = c(NA, 16, 18), bty = "n", horiz = TRUE, cex = 0.8)
+par(mar = c(4, 4, 2, 1))
 for (group in c("all", "modal")) {
   p <- d[d$group == group, ]
   if (!nrow(p)) {
@@ -33,7 +39,5 @@ for (group in c("all", "modal")) {
     }
   }
   if (any(prob == 0)) rug(p$position[prob == 0], col = "grey70")
-  legend("topright", c(paste("Mean", p$metric[1], "distance"), "Breakpoint probability"),
-         col = c("grey55", "#0072B2"), lty = c(1, NA), pch = c(NA, 16), bty = "n")
 }
 invisible(dev.off())

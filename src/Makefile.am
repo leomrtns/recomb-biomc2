@@ -17,3 +17,6 @@ biomc2_summarise_SOURCES = $(common_src) $(sumry_src) $(common_headers) $(sumry_
 biomc2_sprdist_SOURCES = $(common_src) $(common_headers) main_sprdist.c
 biomc2_distance_SOURCES = $(common_src) spr.c $(common_headers) spr.h main_distance.c
 
+check_PROGRAMS = likelihood-check
+likelihood_check_SOURCES = $(common_src) $(bmc2_src) $(common_headers) $(bmc2_headers) ../tests/likelihood_check.c
+AM_CPPFLAGS = -I$(srcdir)

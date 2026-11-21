@@ -166,14 +166,15 @@ void
 bipartition_count_n_ones (const bipartition bip)
 {
   int i;
-  uint64_t j;
   bip->n_ones = 0;
-/* // Naive approach
-  for (i=0; i < bip->n_ints - 1; i++) for (j=0; j < BitStringSize; j++) bip->n_ones += ((bip->bs[i] >> j) & UINT64_C(1));
-  for (j=0; j < bip->n_bits%BitStringSize; j++) bip->n_ones += ((bip->bs[i] >> j) & UINT64_C(1));
- */
-  // clear the least significant bit set per iteration (Peter Wegner in CACM 3 (1960), 322, mentioned in K&R)
-  for (i=0; i < bip->n->ints; i++) for (j = bip->bs[i]; j; bip->n_ones++) j &= j - UINT64_C(1);
+  for (i=0; i < bip->n->ints; i++) {
+#if defined(__GNUC__) || defined(__clang__)
+    bip->n_ones += __builtin_popcountll (bip->bs[i]);
+#else
+    uint64_t word = bip->bs[i];
+    while (word) { word &= word - 1; bip->n_ones++; }
+#endif
+  }
 }
 
 bool
